@@ -448,6 +448,11 @@ SOZ: 2 | So'z | Til | Ta'rif`;
             })
         });
         const data = await response.json();
+        console.log("OPENROUTER RAW JAVOB:", JSON.stringify(data).substring(0, 300));
+        if (!data || !data.choices || !data.choices[0]) {
+            console.error("OPENROUTER: Notogri javob:", JSON.stringify(data));
+            return null;
+        }
         const text = data.choices[0].message.content;
         console.log("OPENROUTER JAVOBI OLINDI. Uzunlik:", text ? text.length : 'NULL');
         return text;
