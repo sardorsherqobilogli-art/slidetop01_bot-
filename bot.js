@@ -5,9 +5,9 @@ const path = require('path');
 
 // ==================== KONFIGURATSIYA ====================
 const token = process.env.TELEGRAM_BOT_TOKEN ? process.env.TELEGRAM_BOT_TOKEN.trim() : '';
-const openrouterKey = process.env.OPENROUTER_API_KEY ? process.env.OPENROUTER_API_KEY.trim() : '';
+const groqKey = process.env.GROQ_API_KEY ? process.env.GROQ_API_KEY.trim() : '';
 const adminId = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : 0;
-console.log("OPENROUTER STATUS:", openrouterKey ? 'kalit bor, uzunlik: ' + openrouterKey.length : 'KALIT YOQ!');
+console.log("GROQ STATUS:", groqKey ? 'kalit bor, uzunlik: ' + groqKey.length : 'KALIT YOQ!');
 const adminUsername = process.env.ADMIN_USERNAME || '';
 const adminPhone = process.env.ADMIN_PHONE || '+998901234567';
 
@@ -432,15 +432,15 @@ SOZ: 2 | So'z | Til | Ta'rif`;
                 prompt = `"${topic}" mavzusida ${count} ta element yarat.`;
         }
 
-        // --- OPENROUTER ---
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        // --- GROQ ---
+        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${openrouterKey}`,
+                "Authorization": `Bearer ${groqKey}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "meta-llama/llama-3.3-70b-instruct",
+                model: "llama-3.3-70b-versatile",
                 messages: [
                     { role: "system", content: "Siz qoidalarga qat'iy amal qiladigan yordamchisiz." },
                     { role: "user", content: prompt }
@@ -448,18 +448,18 @@ SOZ: 2 | So'z | Til | Ta'rif`;
             })
         });
         const data = await response.json();
-        console.log("OPENROUTER RAW JAVOB:", JSON.stringify(data).substring(0, 300));
+        console.log("GROQ RAW JAVOB:", JSON.stringify(data).substring(0, 300));
         if (!data || !data.choices || !data.choices[0]) {
-            console.error("OPENROUTER: Notogri javob:", JSON.stringify(data));
+            console.error("GROQ: Notogri javob:", JSON.stringify(data));
             return null;
         }
         const text = data.choices[0].message.content;
-        console.log("OPENROUTER JAVOBI OLINDI. Uzunlik:", text ? text.length : 'NULL');
+        console.log("GROQ JAVOBI OLINDI. Uzunlik:", text ? text.length : 'NULL');
         return text;
         // ---------------------------------
 
     } catch (err) {
-        console.error("===== OPENROUTER XATOSI =====");
+        console.error("===== GROQ XATOSI =====");
         console.error("Xabar:", err.message);
         console.error("Stack:", err.stack);
         console.error("=========================");
