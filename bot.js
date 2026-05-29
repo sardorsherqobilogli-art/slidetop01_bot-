@@ -259,6 +259,17 @@ function addOrder(userId, type, details) {
     updateUser(userId, { totalOrders: (u.totalOrders || 0) + 1 });
 }
 
+
+// ==================== PAKET TIZIMI ====================
+function getPaket(count, isFree) {
+    if (isFree) return { nom: 'Sinov', emoji: '🎁', narx: 0, min: 1, max: 4 };
+    if (count <= 4)  return { nom: 'Sinov',        emoji: '🎁', narx: 0,    min: 1,  max: 4  };
+    if (count <= 12) return { nom: 'Iqtidor',      emoji: '⚡', narx: 2000, min: 5,  max: 12 };
+    if (count <= 20) return { nom: 'Professional', emoji: '💎', narx: 3500, min: 13, max: 20 };
+    if (count <= 30) return { nom: 'Premium',      emoji: '👑', narx: 6000, min: 21, max: 30 };
+    return { nom: 'Premium', emoji: '👑', narx: 6000, min: 21, max: 30 };
+}
+
 // ==================== KLAVIATURALAR ====================
 const KB = {
     langSelect: () => Markup.inlineKeyboard([
