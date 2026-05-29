@@ -19,8 +19,8 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'admin';
 const ADMIN_PHONE    = process.env.ADMIN_PHONE          || '+998901234567';
 const BOT_USERNAME   = process.env.BOT_USERNAME         || 'SlaydTop_2_bot';
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME   || 'slaydtop_kanal';
-const CARD_NUMBER    = '4067 0700 0893 6564';
-const CARD_OWNER     = "Yo'ldoshev Sardor";
+const CARD_NUMBER = process.env.CARD_NUMBER || '';
+const CARD_OWNER  = process.env.CARD_OWNER  || '';
 
 console.log('GROQ:', GROQ_KEY ? `OK (${GROQ_KEY.length} belgi)` : 'YOQ!');
 if (!BOT_TOKEN) { console.error('TELEGRAM_BOT_TOKEN topilmadi!'); process.exit(1); }
