@@ -665,7 +665,7 @@ async function imagesToPdf(imagePaths, userId) {
 
 // ==================== BOT ====================
 const bot = new Telegraf(BOT_TOKEN);
-bot.use(session());
+bot.use(new LocalSession({ database: path.join(DATA_DIR, 'sessions.json') }).middleware());
 bot.use((ctx, next) => { if (!ctx.session) ctx.session = {}; return next(); });
 
 // ==================== REACTION MIDDLEWARE (👍 avtomatik) ====================
