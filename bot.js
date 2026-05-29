@@ -3,7 +3,9 @@
 //  Groq API + jimp (Rasmdan PDF) + PptxGenJS
 // ============================================================
 
-const { Telegraf, Markup, session } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
+const { LocalSession } = require('telegraf-session-local');
+const Database = require('better-sqlite3');
 const PptxGenJS  = require('pptxgenjs');
 const Jimp       = require('jimp');
 const PDFDocument = require('pdfkit');
@@ -30,7 +32,38 @@ const DATA_DIR      = path.join(__dirname, 'data');
 const TEMPLATES_DIR = path.join(__dirname, 'templates');
 const TEMP_DIR      = path.join(__dirname, 'temp');
 [DATA_DIR, TEMPLATES_DIR, TEMP_DIR].forEach(d => fs.mkdirSync(d, { recursive: true }));
-
+// ==================== SQLITE DATABASE ====================
+const db = new Database(path.join(DATA_DIR, 'slaydtop.db'));
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, data TEXT);
+  CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, data TEXT);
+  CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, data TEXT);
+`);
+function loadJson(filePath, def) {
+    const table = filePath.includes('users') ? 'users' : filePath.includes('payments') ? 'payments' : 'orders';
+    if (table === 'users') {
+        const rows = db.prepare('SELECT id, data FROM users').all();
+        if (!rows.length) return def;
+        const obj = {};
+        rows.forEach(r => { obj[r.id] = JSON.parse(r.data); });
+        return obj;
+    } else {
+        const rows = db.prepare(`SELECT data FROM ${table}`).all();
+        return rows.length ? rows.map(r => JSON.parse(r.data)) : def;
+    }
+}
+function saveJson(filePath, data) {
+    const table = filePath.includes('users') ? 'users' : filePath.includes('payments') ? 'payments' : 'orders';
+    if (table === 'users') {
+        const insert = db.prepare('INSERT OR REPLACE INTO users (id, data) VALUES (?, ?)');
+        const run = db.transaction((obj) => { Object.entries(obj).forEach(([k, v]) => insert.run(k, JSON.stringify(v))); });
+        run(data);
+    } else {
+        const insert = db.prepare(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`);
+        const run = db.transaction((arr) => { arr.forEach(v => insert.run(v.id, JSON.stringify(v))); });
+        run(data);
+    }
+}
 const USERS_FILE    = path.join(DATA_DIR, 'users.json');
 const PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
 const ORDERS_FILE   = path.join(DATA_DIR, 'orders.json');
