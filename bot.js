@@ -190,9 +190,9 @@ const KB = {
     },
     cancel: () => Markup.keyboard([['❌ Bekor qilish']]).resize(),
     slideCount: () => Markup.keyboard([
-        ['5', '7', '8', '10'],
-        ['12', '15', '20', '25'],
-        ['❌ Bekor qilish']
+        ['1', '5', '7', '8'],
+        ['10', '12', '15', '20'],
+        ['25', '30', '❌ Bekor qilish']
     ]).resize(),
     templateMenu: () => Markup.keyboard([
         ['🖼 Shablonlarni ko\'rish'],
@@ -635,6 +635,21 @@ const bot = new Telegraf(BOT_TOKEN);
 bot.use(session());
 bot.use((ctx, next) => { if (!ctx.session) ctx.session = {}; return next(); });
 
+// ==================== REACTION MIDDLEWARE (👍 avtomatik) ====================
+bot.use(async (ctx, next) => {
+    if (ctx.message && ctx.chat && ctx.message.message_id) {
+        try {
+            await ctx.telegram.callApi('setMessageReaction', {
+                chat_id: ctx.chat.id,
+                message_id: ctx.message.message_id,
+                reaction: [{ type: 'emoji', emoji: '👍' }],
+                is_big: false
+            });
+        } catch (_) {}
+    }
+    return next();
+});
+
 // ==================== START ====================
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
@@ -763,7 +778,16 @@ bot.hears('🆕 Slayd Yaratish', async (ctx) => {
     const freeLeft = Math.max(0, FREE_SLIDES - (user.freeUsed || 0));
     updateUser(userId, { step: 'SLAYD_TOPIC' });
     return ctx.reply(
-        `✨ Slayd Yaratish\n\n💰 Sizning balans: ${(user.balance||0).toLocaleString()} so'm\n🎁 Bepul: ${freeLeft} ta\n\n📌 Narxlar:\n• 5-15 ta slayd — 2,000 so'm\n• 16-25 ta slayd — 3,500 so'm\n\nMavzuni kiriting:\n(Masalan: O'zbekistonning tarixi)`,
+        `✨ Slayd Yaratish\n\n` +
+        `💰 Balansingiz: ${(user.balance||0).toLocaleString()} so'm\n\n` +
+        `📦 Paketlar:\n` +
+        `🎁 Sinov       — BEPUL (1 ta slayd)\n` +
+        `⚡ Iqtidor     — 2,000 so'm (5–12 ta)\n` +
+        `💎 Professional — 3,500 so'm (13–20 ta)\n` +
+        `👑 Premium     — 6,000 so'm (21–30 ta)\n` +
+        `🌟 Infinity    — 50,000 so'm/oy (cheksiz)\n\n` +
+        (freeLeft > 0 ? `🎁 Sizda ${freeLeft} ta bepul slayd bor!\n\n` : '') +
+        `📌 Mavzuni kiriting:`,
         KB.cancel()
     );
 });
@@ -1114,23 +1138,29 @@ bot.on('text', async (ctx) => {
 
     if (user.step === 'SLAYD_COUNT') {
         const count = parseInt(text.replace(/\D/g, ''));
-        if (isNaN(count) || count < 5 || count > 25) return ctx.reply('😊 Iltimos, 5 dan 25 gacha son kiriting:');
+        if (isNaN(count) || count < 1 || count > 30) return ctx.reply('😊 Iltimos, 1 dan 30 gacha son kiriting:');
         ctx.session.slideCount = count;
 
         const isFree = (user.freeUsed || 0) < FREE_SLIDES;
-        const price = isFree ? 0 : (count <= 15 ? PRICES.slide_small : PRICES.slide_big);
+        const paket = getPaket(count, isFree);
+        const price = isFree ? 0 : paket.narx;
         ctx.session.slidePrice = price;
 
         if (!isFree && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             ctx.session.afterPaymentStep = 'SLAYD_TEMPLATE';
             updateUser(userId, { step: 'NEED_PAYMENT' });
-            return ctx.reply(T.uz.lowBalance(price, user.balance || 0), KB.payment());
+            return ctx.reply(t(userId, 'lowBalance', price, user.balance || 0), KB.payment());
         }
 
         updateUser(userId, { step: 'SLAYD_TEMPLATE' });
         return ctx.reply(
-            `🎨 Shablon tanlang yoki shablonsiz davom eting:\n\n📌 Mavzu: ${ctx.session.topic}\n📊 Slaydlar: ${count} ta\n💰 Narx: ${price > 0 ? price.toLocaleString() + ' so\'m' : 'BEPUL'}`,
+            `${paket.emoji} ${paket.nom} Paketi\n\n` +
+            `📌 Mavzu: ${ctx.session.topic}\n` +
+            `📊 Slaydlar: ${count} ta\n` +
+            `💰 Narx: ${price > 0 ? price.toLocaleString() + ' so\'m' : 'BEPUL 🎁'}\n\n` +
+            `🎨 Shablon tanlang yoki shablonsiz davom eting:\n` +
+            `💡 2 ta raqam yozsangiz (masalan: 3 7) — 2 xil variant olasiz!`,
             KB.templateMenu()
         );
     }
@@ -1138,13 +1168,27 @@ bot.on('text', async (ctx) => {
     if (user.step === 'SLAYD_TEMPLATE') {
         if (text.includes('Shablonlarni ko\'rish')) {
             return ctx.reply(
-                `🖼 Bizda 50 ta professional shablon bor!\n\nShablonni ko'rish uchun kanalimizga qo'shiling:\n👉 @${CHANNEL_USERNAME}\n\nShablon raqamini kiriting (1-50):`,
+                `🎨 Bizda 50 ta premium shablon bor!\n\n` +
+                `📲 Ko'rish uchun:\n` +
+                `1️⃣ Kanal: https://t.me/SlaydTop_01\n` +
+                `2️⃣ Sayt: https://sardorsherqobilogli-art.github.io/slidetop01_bot-\n\n` +
+                `✅ Ko'rib chiqqach, 2 ta shablon raqamini yuboring!\n` +
+                `📌 Masalan: 3 7\n` +
+                `(Ikki raqam — ikki xil dizayn siz uchun tayyorlanadi 🎁)`,
                 KB.templateMenu()
             );
         }
-        // Shablon raqam yoki shablonsiz
-        const tNum = parseInt(text);
-        ctx.session.templateId = (!isNaN(tNum) && tNum >= 1 && tNum <= 50) ? `template_${String(tNum).padStart(2,'0')}` : null;
+        // 2 ta shablon variant: "3 7" ko'rinishida
+        const rawParts = text.trim().split(/\s+/);
+        const numParts = rawParts.map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 50);
+        if (numParts.length >= 2) {
+            ctx.session.templateId  = `template_${String(numParts[0]).padStart(2,'0')}`;
+            ctx.session.templateId2 = `template_${String(numParts[1]).padStart(2,'0')}`;
+        } else {
+            const tNum = parseInt(text);
+            ctx.session.templateId  = (!isNaN(tNum) && tNum >= 1 && tNum <= 50) ? `template_${String(tNum).padStart(2,'0')}` : null;
+            ctx.session.templateId2 = null;
+        }
         return doCreateSlide(ctx, userId);
     }
 
@@ -1383,8 +1427,20 @@ async function doCreateSlide(ctx, userId) {
     const count = ctx.session.slideCount || 5;
     const price = ctx.session.slidePrice || 0;
     const isFree = price === 0;
+    const tmpl1 = ctx.session.templateId;
+    const tmpl2 = ctx.session.templateId2;
+    const isDual = !!(tmpl1 && tmpl2);
 
-    await ctx.reply(T.uz.creating, { reply_markup: { remove_keyboard: true } });
+    // Paket nomi
+    const paket = getPaket(count, isFree);
+
+    await ctx.reply(
+        `⏳ ${paket.emoji} ${paket.nom} paketi tayyorlanmoqda...\n\n` +
+        `🤖 AI ma'lumot yig'moqda\n🎨 Dizayn ishlanmoqda\n` +
+        (isDual ? `🎁 2 ta variant tayyorlanmoqda\n` : '') +
+        `📎 Fayl yaratilmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+        { reply_markup: { remove_keyboard: true } }
+    );
 
     try {
         if (isFree) {
@@ -1397,22 +1453,38 @@ async function doCreateSlide(ctx, userId) {
         if (!aiText) {
             if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
             updateUser(userId, { step: 'MAIN_MENU' });
-            return ctx.reply(T.uz.error, KB.mainMenu(userId === ADMIN_ID));
+            return ctx.reply(t(userId, 'error'), KB.mainMenu(userId === ADMIN_ID));
         }
 
-        const filePath = await makeSlidePptx(topic, aiText, userId, count, ctx.session.templateId);
-        await ctx.replyWithDocument({ source: filePath }, {
-            caption: `✅ Slaydingiz tayyor! 🎉\n\n📌 Mavzu: ${topic}\n📊 Slaydlar: ${count} ta\n💰 Narx: ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
-        });
-        addOrder(userId, 'slides', { topic, count, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
+        if (isDual) {
+            // 2 ta fayl yaratish
+            const [file1, file2] = await Promise.all([
+                makeSlidePptx(topic, aiText, userId, count, tmpl1),
+                makeSlidePptx(topic, aiText, userId, count, tmpl2)
+            ]);
+            const caption1 = `🎨 Variant 1 — Shablon #${tmpl1?.replace('template_','')||'A'}\n📌 ${topic}\n📊 ${count} ta slayd`;
+            const caption2 = `🎨 Variant 2 — Shablon #${tmpl2?.replace('template_','')||'B'}\n📌 ${topic}\n📊 ${count} ta slayd`;
+            await ctx.replyWithDocument({ source: file1 }, { caption: caption1 });
+            await ctx.replyWithDocument({ source: file2 }, { caption: caption2 });
+            await ctx.reply(`✅ Ikkala variant tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n💰 Narx: ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}\n\nYoqqanini saqlang! 😊`);
+            try { require('fs').unlinkSync(file1); } catch (_) {}
+            try { require('fs').unlinkSync(file2); } catch (_) {}
+        } else {
+            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: `✅ Slaydingiz tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
+            });
+            try { require('fs').unlinkSync(filePath); } catch (_) {}
+        }
+
+        addOrder(userId, 'slides', { topic, count, price, dual: isDual });
         updateUser(userId, { step: 'MAIN_MENU' });
         return ctx.reply('1️⃣ dan 5️⃣ gacha baholang:', KB.rating());
     } catch (err) {
         console.error('Slayd xato:', err.message);
         if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
         updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(T.uz.error, KB.mainMenu(userId === ADMIN_ID));
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(userId === ADMIN_ID));
     }
 }
 
