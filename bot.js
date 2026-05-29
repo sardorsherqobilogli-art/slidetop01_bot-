@@ -4,7 +4,7 @@
 // ============================================================
 
 const { Telegraf, Markup } = require('telegraf');
-const { LocalSession } = require('telegraf-session-local');
+const LocalSession = require('telegraf-session-local');
 const Database = require('better-sqlite3');
 const PptxGenJS  = require('pptxgenjs');
 const Jimp       = require('jimp');
