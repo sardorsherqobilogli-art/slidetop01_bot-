@@ -122,7 +122,8 @@ const T = {
         pdfFree: `📄 Rasmdan PDF — MUTLAQO BEPUL! 🎁\n\nRasmingizni yuboring, men PDF ga aylantirib beraman!\n\n✅ JPG, PNG, WEBP qabul qilinadi\n✅ Bir vaqtda 10 tagacha rasm\n✅ Cheksiz foydalanish mumkin\n\nRasmni yuboring: 👇`,
         pdfGot: (n) => `✅ Rasm qabul qilindi! (${n} ta)\n\nYana rasm qo'shmoqchimisiz?`,
         pdfDone: (n) => `🎉 PDF tayyor!\n\n${n} ta rasmdan PDF yaratildi.\nYuklab oling! ⬇️`,
-   ,ru: {
+},
+    ru: {
         welcome: `🌟 Добро пожаловать в SlaydTop!\nПожалуйста, выберите язык:`,
         enterName: `✨ Отличный выбор!\n\nДавайте познакомимся 😊\nВведите ваше имя:\n(Например: Sardor)`,
         enterSurname: (name) => `🎉 Отличное имя, ${name}!\n\nВведите вашу фамилию:\n(Например: Yoldoshev)`,
@@ -149,8 +150,8 @@ const T = {
         pdfFree: `📄 Фото в PDF — АБСОЛЮТНО БЕСПЛАТНО! 🎁\n\nОтправьте фото, я конвертирую в PDF!\n\n✅ JPG, PNG, WEBP принимаются\n✅ До 10 фото за раз\n✅ Безлимитное использование\n\nОтправьте фото: 👇`,
         pdfGot: (n) => `✅ Фото получено! (${n} шт)\n\nХотите добавить ещё?`,
         pdfDone: (n) => `🎉 PDF готов!\n\n${n} фото конвертировано в PDF.\nСкачайте! ⬇️`,
-    }
-    ,en: {
+    },
+    en: {
         welcome: `🌟 Welcome to SlaydTop!\nPlease select your language:`,
         enterName: `✨ Great choice!\n\nLet's get acquainted 😊\nEnter your name:\n(Example: Sardor)`,
         enterSurname: (name) => `🎉 Great name, ${name}!\n\nEnter your surname:\n(Example: Yoldoshev)`,
