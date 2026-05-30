@@ -1644,112 +1644,166 @@ async function makeInfoPptx(topic, aiText, userId, lang = 'uz') {
 
 // ==================== RASMDAN PDF (JIMP) ====================
 
-// ==================== KOLLAJ YARATISH ====================
+// ==================== KOLLAJ YARATISH (MUKAMMAL SHABLON) ====================
+// Shablon: Sarlavha yuqorida (2 qator, katta qalin), 4 ta rasm 2x2 grid, oq fon
 async function makeCollagePdf(imagePaths, title, userId) {
     return new Promise(async (resolve, reject) => {
         try {
-            const PDFDocument = require('pdfkit');
-            const count = imagePaths.length;
+            // ── O'lchamlar (A4 Portrait) ──
+            const pageW  = 595.28;
+            const pageH  = 841.89;
+            const pad    = 18;          // sahifa chetidan masofa
+            const gap    = 10;          // rasmlar orasidagi bo'shliq
+            const imgsPerPage = 4;      // har sahifada 4 ta rasm (2×2)
+            const count  = imagePaths.length;
+            const totalPages = Math.ceil(count / imgsPerPage);
+
             const pdfPath = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.pdf`);
             const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
             const writeStream = fs.createWriteStream(pdfPath);
             doc.pipe(writeStream);
 
-            // A4 o'lcham
-            const pageW = 595.28, pageH = 841.89;
-            const margin = 15;
-
-            // Har sahifaga nechta rasm joylashini hisoblash
-            // 2 rasm: 1x2, 3 rasm: 1 yuqori + 2 pastda, 4 rasm: 2x2
-            const imgsPerPage = count <= 4 ? count : 4;
-            const totalPages = Math.ceil(count / imgsPerPage);
-
             for (let page = 0; page < totalPages; page++) {
                 doc.addPage({ size: 'A4', margin: 0 });
+
+                // ── Oq fon ──
+                doc.rect(0, 0, pageW, pageH).fill('#FFFFFF');
+
                 const pageImgs = imagePaths.slice(page * imgsPerPage, (page + 1) * imgsPerPage);
                 const n = pageImgs.length;
 
-                // Sarlavha joyi
-                const titleH = title ? 40 : 0;
-                const contentH = pageH - titleH - margin * 2;
-                const contentW = pageW - margin * 2;
-
+                // ── SARLAVHA BLOKI ──
+                // Rasmda ko'ringan kabi: qovoqrang/ko'k fon yo'q, faqat oq fonda katta qalin matn
+                let titleBlockH = 0;
                 if (title) {
-                    doc.fontSize(16).fillColor('#1a237e').font('Helvetica-Bold')
-                       .text(title, margin, 12, { width: contentW, align: 'center' });
+                    // 2 qatorgacha avtomatik ko'rsatiladi
+                    const titleFontSize = 26;
+                    const titleLineH    = titleFontSize * 1.35;
+                    const maxTitleLines = 2;
+                    titleBlockH = pad + maxTitleLines * titleLineH + pad * 0.5;
+
+                    // Sarlavhani ikki qatorga bo'lish (agar uzun bo'lsa)
+                    const words = title.split(' ');
+                    let line1 = '', line2 = '';
+                    let mid = Math.ceil(words.length / 2);
+                    line1 = words.slice(0, mid).join(' ');
+                    line2 = words.slice(mid).join(' ');
+
+                    const titleY = pad;
+                    doc.font('Helvetica-Bold').fontSize(titleFontSize).fillColor('#111111');
+
+                    if (line2.trim()) {
+                        // 2 qator
+                        doc.text(line1, pad, titleY, { width: pageW - pad * 2, align: 'center', lineBreak: false });
+                        doc.text(line2, pad, titleY + titleLineH, { width: pageW - pad * 2, align: 'center', lineBreak: false });
+                        titleBlockH = titleY + titleLineH * 2 + pad * 0.8;
+                    } else {
+                        // 1 qator
+                        doc.text(line1, pad, titleY, { width: pageW - pad * 2, align: 'center', lineBreak: false });
+                        titleBlockH = titleY + titleLineH + pad * 0.8;
+                    }
+                } else {
+                    titleBlockH = pad;
                 }
 
-                // Layout hisoblash
+                // ── GRID HISOBLASH ──
+                // Mavjud rasm maydoni: sarlavhadan pastda, pastki chetigacha
+                const gridTop  = titleBlockH;
+                const gridH    = pageH - gridTop - pad;
+                const gridW    = pageW - pad * 2;
+
+                // Layout: har doim 2×2 (yoki n ta rasm uchun moslashtirish)
                 let layout = [];
                 if (n === 1) {
-                    layout = [{ x: margin, y: margin + titleH, w: contentW, h: contentH }];
+                    layout = [{ x: pad, y: gridTop, w: gridW, h: gridH }];
                 } else if (n === 2) {
-                    const half = (contentH - margin) / 2;
+                    const cellH = (gridH - gap) / 2;
                     layout = [
-                        { x: margin, y: margin + titleH, w: contentW, h: half },
-                        { x: margin, y: margin + titleH + half + margin, w: contentW, h: half }
+                        { x: pad, y: gridTop,            w: gridW, h: cellH },
+                        { x: pad, y: gridTop + cellH + gap, w: gridW, h: cellH }
                     ];
                 } else if (n === 3) {
-                    const topH = contentH * 0.55;
-                    const botH = contentH - topH - margin;
-                    const botW = (contentW - margin) / 2;
+                    const topH  = gridH * 0.52;
+                    const botH  = gridH - topH - gap;
+                    const cellW = (gridW - gap) / 2;
                     layout = [
-                        { x: margin, y: margin + titleH, w: contentW, h: topH },
-                        { x: margin, y: margin + titleH + topH + margin, w: botW, h: botH },
-                        { x: margin + botW + margin, y: margin + titleH + topH + margin, w: botW, h: botH }
+                        { x: pad,            y: gridTop,          w: gridW, h: topH },
+                        { x: pad,            y: gridTop+topH+gap, w: cellW, h: botH },
+                        { x: pad+cellW+gap,  y: gridTop+topH+gap, w: cellW, h: botH }
                     ];
                 } else {
-                    // 4 ta: 2x2
-                    const halfW = (contentW - margin) / 2;
-                    const halfH = (contentH - margin) / 2;
+                    // 4 ta — 2×2 grid (rasmingizga o'xshash)
+                    const cellW = (gridW - gap) / 2;
+                    const cellH = (gridH - gap) / 2;
                     layout = [
-                        { x: margin, y: margin + titleH, w: halfW, h: halfH },
-                        { x: margin + halfW + margin, y: margin + titleH, w: halfW, h: halfH },
-                        { x: margin, y: margin + titleH + halfH + margin, w: halfW, h: halfH },
-                        { x: margin + halfW + margin, y: margin + titleH + halfH + margin, w: halfW, h: halfH }
+                        { x: pad,           y: gridTop,            w: cellW, h: cellH },
+                        { x: pad+cellW+gap, y: gridTop,            w: cellW, h: cellH },
+                        { x: pad,           y: gridTop+cellH+gap,  w: cellW, h: cellH },
+                        { x: pad+cellW+gap, y: gridTop+cellH+gap,  w: cellW, h: cellH }
                     ];
                 }
 
-                // Rasmlarni joylashtirish
+                // ── RASMLARNI JOYLASHTIRISH ──
                 for (let i = 0; i < pageImgs.length; i++) {
+                    const slot    = layout[i];
                     const imgPath = pageImgs[i];
-                    const slot = layout[i];
                     try {
-                        const jimpImg = await Jimp.read(imgPath);
-                        const origW = jimpImg.getWidth();
-                        const origH = jimpImg.getHeight();
+                        // Jimp bilan rasmni o'qib, slot razmeriga CROP (to'liq to'ldirish)
+                        const jimg   = await Jimp.read(imgPath);
+                        const origW  = jimg.getWidth();
+                        const origH  = jimg.getHeight();
 
-                        // Aspect ratio saqlagan holda slot ichiga sig'dirish
-                        const scaleW = slot.w / origW;
-                        const scaleH = slot.h / origH;
-                        const scale = Math.min(scaleW, scaleH);
-                        const drawW = origW * scale;
-                        const drawH = origH * scale;
-                        const offsetX = slot.x + (slot.w - drawW) / 2;
-                        const offsetY = slot.y + (slot.h - drawH) / 2;
+                        // "cover" crop: slot nisbatini to'ldiradi, ortiqchasini kesadi
+                        const scaleW  = slot.w / origW;
+                        const scaleH  = slot.h / origH;
+                        const scale   = Math.max(scaleW, scaleH); // cover = max
+                        const scaledW = Math.round(origW * scale);
+                        const scaledH = Math.round(origH * scale);
+                        const cropX   = Math.round((scaledW - slot.w) / 2);
+                        const cropY   = Math.round((scaledH - slot.h) / 2);
 
-                        const convertedPath = imgPath + '_coll.jpg';
-                        await jimpImg.quality(88).writeAsync(convertedPath);
-                        doc.image(convertedPath, offsetX, offsetY, { width: drawW, height: drawH });
-                        try { fs.unlinkSync(convertedPath); } catch(_) {}
+                        const slotWpx = Math.round(slot.w);
+                        const slotHpx = Math.round(slot.h);
 
-                        // Ramka
+                        jimg.resize(scaledW, scaledH)
+                            .crop(cropX, cropY, slotWpx, slotHpx);
+
+                        const tmpCrop = imgPath + `_crop${i}.jpg`;
+                        await jimg.quality(90).writeAsync(tmpCrop);
+
+                        // Rasmni shu slot koordinatasiga qo'y (to'liq to'ldiradi)
+                        doc.image(tmpCrop, slot.x, slot.y, { width: slot.w, height: slot.h });
+                        try { fs.unlinkSync(tmpCrop); } catch(_) {}
+
+                        // Ingichka ramka (1px, kulrang)
                         doc.rect(slot.x, slot.y, slot.w, slot.h)
-                           .lineWidth(0.5).strokeColor('#cccccc').stroke();
-                    } catch(imgErr) {
-                        console.error('Kollaj rasm xato:', imgErr.message);
+                           .lineWidth(1).strokeColor('#bbbbbb').stroke();
+                    } catch (imgErr) {
+                        console.error(`Kollaj rasm[${i}] xato:`, imgErr.message);
+                        // Rasm o'rniga kulrang joy qoldirish
+                        doc.rect(slot.x, slot.y, slot.w, slot.h)
+                           .fill('#eeeeee');
+                        doc.fontSize(11).fillColor('#999999')
+                           .text('⚠️ Rasm yuklanmadi', slot.x, slot.y + slot.h / 2 - 8, {
+                               width: slot.w, align: 'center', lineBreak: false
+                           });
                     }
                 }
 
-                // Sahifa raqami
-                doc.fontSize(9).fillColor('#999999')
-                   .text(`${page + 1} / ${totalPages}`, pageW - 60, pageH - 20, { width: 50, align: 'right' });
+                // ── PASTKI IMZO ──
+                doc.font('Helvetica').fontSize(8).fillColor('#cccccc')
+                   .text('SlaydTop', pad, pageH - 14, { lineBreak: false });
+                if (totalPages > 1) {
+                    doc.text(`${page + 1} / ${totalPages}`, pageW - 50, pageH - 14, {
+                        width: 40, align: 'right', lineBreak: false
+                    });
+                }
             }
 
             doc.end();
             writeStream.on('finish', () => resolve(pdfPath));
             writeStream.on('error', reject);
-        } catch(err) {
+        } catch (err) {
             reject(err);
         }
     });
