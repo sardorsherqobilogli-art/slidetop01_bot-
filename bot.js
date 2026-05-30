@@ -1644,203 +1644,138 @@ async function makeInfoPptx(topic, aiText, userId, lang = 'uz') {
 
 // ==================== RASMDAN PDF (JIMP) ====================
 
-// ==================== SARLAVHA PNG (Jimp orqali — hech narsa o'rnatish shart emas) ====================
-async function makeTitleImage(title, widthPx, heightPx) {
-    // Jimp bilan oq fonda qora matn — Unicode harflar uchun bitmap font ishlatiladi
-    // Jimp built-in FONT_SANS_16_BLACK kabi fontlar faqat ASCII — biz boshqa yondashuvdan foydalanamiz:
-    // Sarlavhani Jimp bilan rasm sifatida yaratish MUMKIN EMAS to'g'ri (unicode yo'q)
-    // Shuning uchun biz PDFKit ga matnni PRINT qilamiz, lekin encoding muammosi bor.
-    // YECHIM: sarlavhani alohida PDF sahifadan rasm sifatida olib yopishtiramiz emas,
-    // balki faqat ASCII-safe harflar bilan ishlash + transliteration qilamiz.
-    return null; // ishlatilmaydi, quyida inline yoziladi
-}
-
-// O'zbek maxsus harflarini PDF uchun xavfsiz variantga o'girish
-function safeTitle(str) {
-    return str
-        .replace(/ʻ/g, "'")   // ʻ → '
-        .replace(/ʼ/g, "'")   // ʼ → '
-        .replace(/‘/g, "'")   // ' → '
-        .replace(/’/g, "'")   // ' → '
-        .replace(/“/g, '"')   // " → "
-        .replace(/”/g, '"')   // " → "
-        .replace(/'/g, "'");  // standard apostrophe
-}
-
-// ==================== KOLLAJ YARATISH ====================
+// ==================== KOLLAJ YARATISH (Word .docx) ====================
+// Sarlavha: 30pt, qalin, markazda. 4 ta rasm: 2x2 jadval. O'zbek harflari to'g'ri.
 async function makeCollagePdf(imagePaths, title, userId) {
-    return new Promise(async (resolve, reject) => {
+    // makeCollagePdf nomi saqlanadi (chaqiruvchi kod o'zgarmaydi), lekin .docx qaytaradi
+    const {
+        Document, Packer, Paragraph, TextRun,
+        Table, TableRow, TableCell,
+        ImageRun, AlignmentType, WidthType,
+        BorderStyle, VerticalAlign
+    } = require('docx');
+
+    const count      = imagePaths.length;
+    const docxPath   = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.docx`);
+
+    // A4: 11906 x 16838 DXA, margin 720 (0.5 inch) har tomondan
+    // Content width = 11906 - 720*2 = 10466 DXA
+    const CONTENT_W  = 10466; // DXA
+    const CELL_W     = Math.floor((CONTENT_W - 200) / 2); // 2 ustun, 200 gap
+    // Rasm o'lchami EMU (English Metric Units): 1 inch = 914400 EMU
+    // Har katak ~3.6 inch keng, ~3.4 inch baland
+    const IMG_W_EMU  = Math.round(3.6 * 914400);
+    const IMG_H_EMU  = Math.round(3.4 * 914400);
+
+    const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+    const noBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+
+    // Rasmlarni cover-crop qilib tayyorlash (Jimp)
+    const imgW_px = Math.round(IMG_W_EMU / 914400 * 150); // 150dpi
+    const imgH_px = Math.round(IMG_H_EMU / 914400 * 150);
+
+    async function cropImg(imgPath) {
         try {
-            const count    = imagePaths.length;
-            const pdfPath  = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.pdf`);
-
-            // ── A4 o'lchamlari ──
-            const pageW = 595.28, pageH = 841.89;
-            const pad   = 18;   // chet bo'shliq
-            const gap   = 10;   // rasmlar orasidagi bo'shliq
-
-            const imgsPerPage = 4;
-            const totalPages  = Math.ceil(count / imgsPerPage);
-
-            const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
-            const writeStream = fs.createWriteStream(pdfPath);
-            doc.pipe(writeStream);
-
-            for (let page = 0; page < totalPages; page++) {
-                doc.addPage({ size: 'A4', margin: 0 });
-
-                // Oq fon
-                doc.rect(0, 0, pageW, pageH).fill('#FFFFFF');
-
-                const pageImgs = imagePaths.slice(page * imgsPerPage, (page + 1) * imgsPerPage);
-                const n = pageImgs.length;
-
-                // ── SARLAVHA (Jimp bitmap rasm sifatida) ──
-                // O'zbek harflarini xavfsiz variantga o'giramiz
-                let titleBlockH = pad;
-                if (title) {
-                    const safeT = safeTitle(title);
-                    const words = safeT.trim().split(' ');
-                    const mid   = Math.ceil(words.length / 2);
-                    const line1 = words.slice(0, mid).join(' ');
-                    const line2 = words.slice(mid).join(' ');
-                    const hasTwo = line2.trim().length > 0;
-
-                    // Jimp bilan sarlavha rasmini yaratamiz
-                    const titleW = Math.round(pageW * 2); // 2x retina
-                    const fontSize = 18; // shrift o'lchami
-                    const lineH  = Math.round(fontSize * 3.2);
-                    const titleH = hasTwo ? pad * 2 + lineH * 2 : pad * 2 + lineH;
-                    const titleWpx = titleW;
-                    const titleHpx = Math.round(titleH * 2);
-
-                    try {
-                        // Jimp bilan oq fon yaratamiz
-                        const titleImg = new Jimp(titleWpx, titleHpx, 0xFFFFFFFF);
-
-                        // Jimp built-in font yuklash
-                        const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
-
-                        // Har bir qatorni markazda yozish
-                        const printLine = (text, yPos) => {
-                            titleImg.print(
-                                font, 0, yPos,
-                                { text, alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER, alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE },
-                                titleWpx, lineH * 2
-                            );
-                        };
-
-                        if (hasTwo) {
-                            printLine(line1, Math.round(pad));
-                            printLine(line2, Math.round(pad + lineH * 2));
-                        } else {
-                            printLine(line1, Math.round(titleHpx / 2 - lineH));
-                        }
-
-                        const titleTmp = path.join(TEMP_DIR, `title_${userId}_${page}.png`);
-                        await titleImg.writeAsync(titleTmp);
-                        doc.image(titleTmp, 0, 0, { width: pageW, height: titleH });
-                        try { fs.unlinkSync(titleTmp); } catch(_) {}
-                        titleBlockH = titleH;
-                    } catch(titleErr) {
-                        // Font yuklanmasa — oddiy PDFKit matn (ASCII harflar uchun)
-                        console.error('Jimp title xato:', titleErr.message);
-                        const safeText = safeTitle(title);
-                        const fz = 18;
-                        const th = pad * 2 + fz * (hasTwo ? 2.8 : 1.8);
-                        doc.font('Helvetica-Bold').fontSize(fz).fillColor('#111111')
-                           .text(safeText, pad, pad + 4, { width: pageW - pad * 2, align: 'center' });
-                        titleBlockH = th;
-                    }
-                }
-
-                // ── GRID LAYOUT ──
-                const gridTop = titleBlockH;
-                const gridH   = pageH - gridTop - pad;
-                const gridW   = pageW - pad * 2;
-
-                let layout = [];
-                if (n === 1) {
-                    layout = [{ x: pad, y: gridTop, w: gridW, h: gridH }];
-                } else if (n === 2) {
-                    const cellH = (gridH - gap) / 2;
-                    layout = [
-                        { x: pad, y: gridTop,             w: gridW, h: cellH },
-                        { x: pad, y: gridTop + cellH+gap, w: gridW, h: cellH }
-                    ];
-                } else if (n === 3) {
-                    const topH  = gridH * 0.52;
-                    const botH  = gridH - topH - gap;
-                    const cellW = (gridW - gap) / 2;
-                    layout = [
-                        { x: pad,           y: gridTop,          w: gridW, h: topH },
-                        { x: pad,           y: gridTop+topH+gap, w: cellW, h: botH },
-                        { x: pad+cellW+gap, y: gridTop+topH+gap, w: cellW, h: botH }
-                    ];
-                } else {
-                    // 4 ta: to'liq teng 2×2 grid
-                    const cellW = (gridW - gap) / 2;
-                    const cellH = (gridH - gap) / 2;
-                    layout = [
-                        { x: pad,           y: gridTop,           w: cellW, h: cellH },
-                        { x: pad+cellW+gap, y: gridTop,           w: cellW, h: cellH },
-                        { x: pad,           y: gridTop+cellH+gap, w: cellW, h: cellH },
-                        { x: pad+cellW+gap, y: gridTop+cellH+gap, w: cellW, h: cellH }
-                    ];
-                }
-
-                // ── RASMLARNI JOYLASHTIRISH (cover crop — to'liq to'ldiradi) ──
-                for (let i = 0; i < pageImgs.length; i++) {
-                    const imgPath = pageImgs[i];
-                    const slot    = layout[i];
-                    try {
-                        const jimpImg = await Jimp.read(imgPath);
-                        const origW = jimpImg.getWidth();
-                        const origH = jimpImg.getHeight();
-
-                        // Cover: slotni to'liq to'ldirish (ortiqchasini kesib)
-                        const slotWpx = Math.round(slot.w);
-                        const slotHpx = Math.round(slot.h);
-                        const scale   = Math.max(slotWpx / origW, slotHpx / origH);
-                        const scaledW = Math.round(origW * scale);
-                        const scaledH = Math.round(origH * scale);
-                        const cropX   = Math.round((scaledW - slotWpx) / 2);
-                        const cropY   = Math.round((scaledH - slotHpx) / 2);
-
-                        jimpImg
-                            .resize(scaledW, scaledH)
-                            .crop(cropX, cropY, slotWpx, slotHpx);
-
-                        const tmpPath = imgPath + `_c${i}.jpg`;
-                        await jimpImg.quality(90).writeAsync(tmpPath);
-                        doc.image(tmpPath, slot.x, slot.y, { width: slot.w, height: slot.h });
-                        try { fs.unlinkSync(tmpPath); } catch(_) {}
-
-                        // Ingichka ramka
-                        doc.rect(slot.x, slot.y, slot.w, slot.h)
-                           .lineWidth(1).strokeColor('#aaaaaa').stroke();
-                    } catch(imgErr) {
-                        console.error(`Rasm[${i}] xato:`, imgErr.message);
-                        doc.rect(slot.x, slot.y, slot.w, slot.h).fill('#eeeeee');
-                    }
-                }
-
-                // ── Pastki imzo ──
-                doc.font('Helvetica').fontSize(8).fillColor('#cccccc')
-                   .text('SlaydTop', pad, pageH - 14, { lineBreak: false });
-                if (totalPages > 1) {
-                    doc.text(`${page + 1} / ${totalPages}`, pageW - 50, pageH - 14,
-                        { width: 40, align: 'right', lineBreak: false });
-                }
-            }
-
-            doc.end();
-            writeStream.on('finish', () => resolve(pdfPath));
-            writeStream.on('error', reject);
-        } catch(err) {
-            reject(err);
+            const jimg  = await Jimp.read(imgPath);
+            const oW    = jimg.getWidth(), oH = jimg.getHeight();
+            const scale = Math.max(imgW_px / oW, imgH_px / oH);
+            const sW    = Math.round(oW * scale), sH = Math.round(oH * scale);
+            const cX    = Math.round((sW - imgW_px) / 2);
+            const cY    = Math.round((sH - imgH_px) / 2);
+            jimg.resize(sW, sH).crop(cX, cY, imgW_px, imgH_px);
+            const tmp = imgPath + '_w.jpg';
+            await jimg.quality(90).writeAsync(tmp);
+            return tmp;
+        } catch(e) {
+            console.error('cropImg xato:', e.message);
+            return imgPath;
         }
+    }
+
+    // 4 ta rasm tayyorlash
+    const imgSlots = imagePaths.slice(0, 4);
+    while (imgSlots.length < 4) imgSlots.push(null);
+
+    const croppedPaths = [];
+    for (const p of imgSlots) {
+        croppedPaths.push(p ? await cropImg(p) : null);
+    }
+
+    // ImageRun yoki bo'sh katak
+    function makeCell(croppedPath) {
+        const children = [];
+        if (croppedPath && fs.existsSync(croppedPath)) {
+            const buf = fs.readFileSync(croppedPath);
+            children.push(new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [new ImageRun({
+                    data: buf,
+                    transformation: { width: Math.round(IMG_W_EMU / 914400 * 96), height: Math.round(IMG_H_EMU / 914400 * 96) },
+                    type: 'jpg'
+                })]
+            }));
+        } else {
+            children.push(new Paragraph({ children: [] }));
+        }
+        return new TableCell({
+            borders: noBorders,
+            width: { size: CELL_W, type: WidthType.DXA },
+            margins: { top: 50, bottom: 50, left: 50, right: 50 },
+            verticalAlign: VerticalAlign.CENTER,
+            children
+        });
+    }
+
+    // 2x2 jadval
+    const tableRows = [
+        new TableRow({ children: [makeCell(croppedPaths[0]), makeCell(croppedPaths[1])] }),
+        new TableRow({ children: [makeCell(croppedPaths[2]), makeCell(croppedPaths[3])] }),
+    ];
+
+    const children = [];
+
+    // Sarlavha — 30pt, qalin, markazda, O'zbek harflari to'g'ri
+    if (title) {
+        children.push(new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 0, after: 200 },
+            children: [new TextRun({
+                text: title,
+                bold: true,
+                size: 60,        // 60 half-points = 30pt
+                font: 'Times New Roman',
+            })]
+        }));
+    }
+
+    // Jadval
+    children.push(new Table({
+        width: { size: CONTENT_W, type: WidthType.DXA },
+        columnWidths: [CELL_W, CELL_W],
+        rows: tableRows,
+    }));
+
+    const doc = new Document({
+        sections: [{
+            properties: {
+                page: {
+                    size: { width: 11906, height: 16838 }, // A4
+                    margin: { top: 720, right: 720, bottom: 720, left: 720 }
+                }
+            },
+            children
+        }]
     });
+
+    const buffer = await Packer.toBuffer(doc);
+    fs.writeFileSync(docxPath, buffer);
+
+    // Temp crop fayllarni o'chirish
+    for (const p of croppedPaths) {
+        if (p && p.endsWith('_w.jpg')) { try { fs.unlinkSync(p); } catch(_) {} }
+    }
+
+    return docxPath;
 }
 
 async function imagesToPdf(imagePaths, userId) {
@@ -2455,7 +2390,7 @@ async function buildAndSendCollage(ctx, userId) {
             `🖼 ${images.length} ta rasm\n` +
             `${title ? `📌 Sarlavha: "${title}"\n` : ''}` +
             `💰 BEPUL`;
-        await ctx.replyWithDocument({ source: pdfPath }, { caption });
+        await ctx.replyWithDocument({ source: pdfPath }, { caption, filename: `Kollaj_${userId}.docx` });
         addOrder(userId, 'collage', { count: images.length, title, price: 0 });
         images.forEach(p => { try { fs.unlinkSync(p); } catch(_) {} });
         try { fs.unlinkSync(pdfPath); } catch(_) {}
