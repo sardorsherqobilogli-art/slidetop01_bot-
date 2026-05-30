@@ -881,10 +881,18 @@ const KB = {
     ]).resize(),
     templateMenu: (lang = 'uz') => {
         const l = T[lang] || T.uz;
+        const labels = {
+            uz: { view: '🖼 Shablonlarni Ko\'rish', normal: '📋 Oddiy Shablon', chart: '📈 Diagrammali Shablon', pic: '🖼 /pic — O\'z Rasmim', ai: '🤖 AI Rasm [1-Sentabr]', no: '✨ Shablonsiz (Tez)' },
+            ru: { view: '🖼 Посмотреть шаблоны', normal: '📋 Обычный шаблон', chart: '📈 С диаграммой', pic: '🖼 /pic — Своё фото', ai: '🤖 AI Фото [1 Сентября]', no: '✨ Без шаблона (Быстро)' },
+            en: { view: '🖼 View Templates', normal: '📋 Normal Template', chart: '📈 With Chart', pic: '🖼 /pic — My Photo', ai: '🤖 AI Image [Sep 1]', no: '✨ No Template (Fast)' },
+            id: { view: '🖼 Lihat Template', normal: '📋 Template Biasa', chart: '📈 Dengan Diagram', pic: '🖼 /pic — Foto Saya', ai: '🤖 Gambar AI [1 Sep]', no: '✨ Tanpa Template' }
+        };
+        const lb = labels[lang] || labels.uz;
         return Markup.keyboard([
-            ['🖼 ' + (lang === 'ru' ? 'Посмотреть шаблоны' : lang === 'en' ? 'View Templates' : lang === 'id' ? 'Lihat Template' : 'Shablonlarni ko\'rish')],
-            ['✨ ' + (lang === 'ru' ? 'Без шаблона' : lang === 'en' ? 'No Template' : lang === 'id' ? 'Tanpa Template' : 'Shablonsiz (Oddiy)')],
-            ['❌ ' + l.cancel]
+            [lb.view],
+            [lb.normal, lb.chart],
+            [lb.pic, lb.ai],
+            [lb.no, '❌ ' + l.cancel]
         ]).resize();
     },
     testCount: (lang = 'uz') => {
@@ -1231,7 +1239,7 @@ async function downloadPollinationsImage(prompt, filePath, retries = 2) {
     return null; // Rasm yuklanmadi — slayd rasmsiz davom etadi
 }
 
-async function makeSlidePptx(topic, aiText, userId, slideCount, templateId, lang = 'uz') {
+async function makeSlidePptx(topic, aiText, userId, slideCount, templateId, lang = 'uz', userPicPath = null) {
     const pptx = new PptxGenJS();
     const user = getUser(userId);
     const clr = randColor();
@@ -1274,6 +1282,15 @@ async function makeSlidePptx(topic, aiText, userId, slideCount, templateId, lang
         cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: '100%', h: '100%', fill: { color: '000000', transparency: 45 } });
     } else {
         cover.background = { color: clr.primary };
+    // Foydalanuvchi rasmi bo'lsa muqovaga fon sifatida qo'yish
+    if (userPicPath && fs.existsSync(userPicPath)) {
+        try {
+            cover.addImage({ path: userPicPath, x: 0, y: 0, w: 10, h: 5.63, sizing: { type: 'cover', w: 10, h: 5.63 } });
+            cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: '100%', h: '100%', fill: { color: '000000', transparency: 45 } });
+        } catch(e) {
+            cover.background = { color: clr.primary };
+        }
+    }
     }
     cover.addText(topic, {
         x: 0.5, y: 1.3, w: '90%',
@@ -1369,6 +1386,85 @@ async function makeSlidePptx(topic, aiText, userId, slideCount, templateId, lang
         try { fs.unlinkSync(imgPath); } catch (_) {}
     }
 
+    return filePath;
+}
+
+
+// ==================== DIAGRAMMALI SLAYD ====================
+async function makeChartSlidePptx(topic, aiText, userId, slideCount, lang = 'uz') {
+    const pptx = new PptxGenJS();
+    const user = getUser(userId);
+    pptx.layout = 'LAYOUT_16x9';
+    pptx.title = topic;
+
+    const chartColors = ['4472C4', 'ED7D31', 'A9D18E', 'FF0000', '9E480E', 'FFC000'];
+    const bgColors = [
+        { primary: '1565C0', bg: 'E3F2FD', text: '0D2137' },
+        { primary: '2E7D32', bg: 'E8F5E9', text: '0A2E0C' },
+        { primary: '6A1B9A', bg: 'F3E5F5', text: '2D0B4E' },
+        { primary: 'BF360C', bg: 'FBE9E7', text: '4E1103' },
+    ];
+    const clr = bgColors[Math.floor(Math.random() * bgColors.length)];
+
+    // Muqova
+    const cover = pptx.addSlide();
+    cover.background = { color: clr.primary };
+    cover.addText(`📈 ${topic}`, { x: 0.5, y: 1.2, w: '90%', fontSize: 34, bold: true, color: 'FFFFFF', align: 'center' });
+    cover.addShape(pptx.ShapeType.line, { x: 2, y: 3.0, w: 6, h: 0, line: { color: 'FFFFFF', width: 2, transparency: 40 } });
+    cover.addText(`${user.name || ''} ${user.surname || ''}\nSlaydTop AI — Diagrammali`, { x: 0.5, y: 3.2, w: '90%', fontSize: 13, color: 'E0E0E0', align: 'center' });
+
+    const parts = aiText.split(/SLIDE:/i).map(s => s.trim()).filter(s => s.length > 5);
+    const limit = Math.min(parts.length || 1, slideCount);
+
+    for (let i = 0; i < limit; i++) {
+        const raw = parts[i] || '';
+        let title = '', content = '';
+        if (raw.includes('|')) {
+            const sp = raw.split('|').map(x => x.trim());
+            title = sp[0].replace(/^\d+[:.\-]?\s*/, '');
+            content = sp.slice(1).join('\n');
+        } else {
+            const lines = raw.split('\n').filter(l => l.trim());
+            title = lines[0]?.replace(/^\d+[:.\-]?\s*/, '') || `${topic} — ${i+1}`;
+            content = lines.slice(1).join('\n');
+        }
+
+        const sl = pptx.addSlide();
+        sl.background = { color: clr.bg };
+        sl.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: '100%', h: 1.05, fill: { color: clr.primary } });
+        sl.addText(title || `${topic} — ${i+1}`, { x: 0.4, y: 0.2, w: '90%', fontSize: 21, bold: true, color: 'FFFFFF' });
+
+        if (content) {
+            sl.addText(content, { x: 0.3, y: 1.15, w: 4.8, fontSize: 13, color: clr.text, lineSpacing: 22, valign: 'top' });
+        }
+
+        const chartType = i % 3 === 0 ? pptx.ChartType.bar : i % 3 === 1 ? pptx.ChartType.pie : pptx.ChartType.line;
+        const labels = ['A', 'B', 'C', 'D', 'E'];
+        const values = [
+            Math.floor(Math.random() * 70) + 30,
+            Math.floor(Math.random() * 70) + 30,
+            Math.floor(Math.random() * 70) + 30,
+            Math.floor(Math.random() * 70) + 30,
+            Math.floor(Math.random() * 70) + 30,
+        ];
+
+        try {
+            sl.addChart(chartType, [{ name: title, labels, values }], {
+                x: 5.2, y: 1.1, w: 4.5, h: 3.9,
+                showLegend: false, showValue: true,
+                chartColors, dataLabelFontSize: 10,
+            });
+        } catch(e) {
+            sl.addShape(pptx.ShapeType.rect, { x: 5.2, y: 1.1, w: 4.5, h: 3.9, fill: { color: clr.primary, transparency: 85 }, line: { color: clr.primary, width: 1 } });
+            sl.addText('📊 Diagramma', { x: 5.5, y: 2.8, w: 4, fontSize: 14, color: clr.primary, align: 'center' });
+        }
+
+        sl.addText(`${i+1} / ${limit}`, { x: 8.5, y: 5.1, w: 1.3, fontSize: 9, color: '999999', align: 'right' });
+        sl.addText('SlaydTop AI', { x: 0.3, y: 5.1, w: 2, fontSize: 8, color: 'BBBBBB', italic: true });
+    }
+
+    const filePath = path.join(TEMP_DIR, `Chart_${userId}_${Date.now()}.pptx`);
+    await pptx.writeFile({ fileName: filePath });
     return filePath;
 }
 
@@ -1982,6 +2078,30 @@ bot.on('photo', async (ctx) => {
     const lang = getLang(userId);
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
 
+    // SLAYD uchun /pic rasm qabul qilish
+    if (user.step === 'SLAYD_PIC_WAIT') {
+        try {
+            const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+            const imgPath = path.join(TEMP_DIR, `user_pic_${userId}_${Date.now()}.jpg`);
+            await new Promise((resolve, reject) => {
+                const proto = fileLink.href.startsWith('https') ? require('https') : require('http');
+                const file = fs.createWriteStream(imgPath);
+                proto.get(fileLink.href, res => {
+                    res.pipe(file);
+                    file.on('finish', () => { file.close(); resolve(); });
+                }).on('error', reject);
+            });
+            ctx.session.userPicPath = imgPath;
+            ctx.session.slideType = 'pic';
+            updateUser(userId, { step: 'SLAYD_TEMPLATE' });
+            await ctx.reply(`✅ Rasm qabul qilindi! Slayd yaratilmoqda...`);
+            return doCreateSlide(ctx, userId);
+        } catch(e) {
+            console.error('Pic yuklash xato:', e.message);
+            return ctx.reply('😔 Rasm yuklab olishda xato. Qayta yuboring.');
+        }
+    }
+
     // To'lov cheki
     if (user.step === 'WAITING_CLICK_CHECK' || user.step === 'WAITING_PAYME_CHECK') {
         const payType = user.step === 'WAITING_CLICK_CHECK' ? 'click' : 'payme';
@@ -2124,12 +2244,50 @@ bot.on('text', async (ctx) => {
     }
 
     if (user.step === 'SLAYD_TEMPLATE') {
+        // Shablonlarni ko'rish
         const viewLabels = ['ko\'rish', 'Посмотреть', 'View', 'Lihat'];
         if (viewLabels.some(v => text.toLowerCase().includes(v.toLowerCase()))) {
             const channelLink = process.env.CHANNEL_LINK || `https://t.me/${CHANNEL_USERNAME}`;
             const siteLink = process.env.SITE_LINK || 'https://sardorsherqobilogli-art.github.io/slidetop01_bot-';
-            return ctx.reply(t(userId, 'templateInfo', channelLink, siteLink), KB.templateMenu(lang));
+            return ctx.reply(
+                `🎨 50 ta premium shablon mavjud!\n\n📲 Ko'rish uchun:\n1️⃣ Kanal: ${channelLink}\n2️⃣ Sayt: ${siteLink}\n\n✅ Ko'rib chiqqach, shablon raqamini yuboring (1-50)\n💡 Yoki quyidagi usullardan birini tanlang:`,
+                KB.templateMenu(lang)
+            );
         }
+
+        // AI Rasm — 1-Sentabrga qadar yopiq
+        const aiLabels = ['AI Rasm', 'AI Фото', 'AI Image', 'Gambar AI', '1-Sentabr', '1 Сентября', 'Sep 1', '1 Sep'];
+        if (aiLabels.some(v => text.includes(v))) {
+            return ctx.reply(
+                `🤖 AI Rasm Yaratish\n\n⏳ Bu bo'lim hozircha tayyorlanmoqda.\n🗓 Ochilish sanasi: 1-Sentabr 2025\n\n✅ Hozircha quyidagi usullardan foydalaning:\n📋 Oddiy Shablon\n📈 Diagrammali\n🖼 /pic — O'z rasmingiz`,
+                KB.templateMenu(lang)
+            );
+        }
+
+        // Diagrammali shablon
+        const chartLabels = ['Diagramma', 'диаграмм', 'Chart', 'Diagram'];
+        if (chartLabels.some(v => text.includes(v))) {
+            ctx.session.slideType = 'chart';
+            ctx.session.templateId = null;
+            ctx.session.templateId2 = null;
+            return doCreateSlide(ctx, userId);
+        }
+
+        // /pic — foydalanuvchi rasm yuboradi
+        const picLabels = ['/pic', 'Rasmim', 'Фото', 'My Photo', 'Foto Saya'];
+        if (picLabels.some(v => text.includes(v))) {
+            ctx.session.slideType = 'pic';
+            ctx.session.templateId = null;
+            ctx.session.templateId2 = null;
+            updateUser(userId, { step: 'SLAYD_PIC_WAIT' });
+            return ctx.reply(
+                `🖼 Rasmingizni yuboring!\n\n📌 Mavzu: ${ctx.session.topic}\n\n✅ 1 ta rasm yuboring — slaydning muqova qismiga qo'yiladi.\n💡 Yaxshi rasm: 16:9 nisbat, aniq, yorqin`,
+                KB.cancel(lang)
+            );
+        }
+
+        // Oddiy shablon yoki shablon raqami
+        ctx.session.slideType = 'normal';
         const rawParts = text.trim().split(/\s+/);
         const numParts = rawParts.map(Number).filter(n => !isNaN(n) && n >= 1 && n <= 50);
         if (numParts.length >= 2) {
@@ -2141,6 +2299,14 @@ bot.on('text', async (ctx) => {
             ctx.session.templateId2 = null;
         }
         return doCreateSlide(ctx, userId);
+    }
+
+    // SLAYD_PIC_WAIT — matn kelsa eslatma
+    if (user.step === 'SLAYD_PIC_WAIT') {
+        return ctx.reply(
+            `📸 Iltimos, rasm (foto) yuboring.\nMatn emas — rasm kerak!`,
+            KB.cancel(lang)
+        );
     }
 
     // ====== PDF ======
@@ -2389,9 +2555,16 @@ async function doCreateSlide(ctx, userId) {
     const tmpl1 = ctx.session.templateId;
     const tmpl2 = ctx.session.templateId2;
     const isDual = !!(tmpl1 && tmpl2);
+    const slideType = ctx.session.slideType || 'normal';
+    const userPicPath = ctx.session.userPicPath || null;
     const paket = getPaket(count, isFree, lang);
 
-    await ctx.reply(t(userId, 'slideCreating', paket, isDual), { reply_markup: { remove_keyboard: true } });
+    const processMsgs = {
+        normal: `⏳ ${paket.emoji} ${paket.nom} tayyorlanmoqda...\n\n📋 Shablon tanlanmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n📎 Fayl tayyorlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+        chart:  `⏳ ${paket.emoji} Diagrammali slayd tayyorlanmoqda...\n\n🤖 AI matn yozmoqda\n📈 Grafiklar chizilmoqda\n📊 Diagrammalar qo'shilmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+        pic:    `⏳ ${paket.emoji} Rasmli slayd tayyorlanmoqda...\n\n🖼 Rasmingiz joylashtirilmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+    };
+    await ctx.reply(processMsgs[slideType] || processMsgs.normal, { reply_markup: { remove_keyboard: true } });
 
     try {
         if (isFree) {
@@ -2407,32 +2580,57 @@ async function doCreateSlide(ctx, userId) {
             return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
         }
 
-        if (isDual) {
+        if (slideType === 'chart') {
+            // DIAGRAMMALI
+            const filePath = await makeChartSlidePptx(topic, aiText, userId, count, lang);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: `✅ Diagrammali slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
+            });
+            try { fs.unlinkSync(filePath); } catch(_) {}
+
+        } else if (slideType === 'pic' && userPicPath && fs.existsSync(userPicPath)) {
+            // RASMLI
+            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang, userPicPath);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: `✅ Rasmli slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n🖼 Sizning rasmingiz bilan\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
+            });
+            try { fs.unlinkSync(filePath); } catch(_) {}
+            try { fs.unlinkSync(userPicPath); } catch(_) {}
+
+        } else if (isDual) {
+            // 2 TA SHABLON
             const [file1, file2] = await Promise.all([
                 makeSlidePptx(topic, aiText, userId, count, tmpl1, lang),
                 makeSlidePptx(topic, aiText, userId, count, tmpl2, lang)
             ]);
-            const caption1 = t(userId, 'slideVariant', 1, tmpl1, topic, count);
-            const caption2 = t(userId, 'slideVariant', 2, tmpl2, topic, count);
-            await ctx.replyWithDocument({ source: file1 }, { caption: caption1 });
-            await ctx.replyWithDocument({ source: file2 }, { caption: caption2 });
-            await ctx.reply(t(userId, 'slideReady2', paket, isFree, price));
-            try { fs.unlinkSync(file1); } catch (_) {}
-            try { fs.unlinkSync(file2); } catch (_) {}
+            await ctx.replyWithDocument({ source: file1 }, { caption: `🎨 Variant 1 — Shablon #${tmpl1?.replace('template_','')||'A'}\n📌 ${topic}\n📊 ${count} ta slayd` });
+            await ctx.replyWithDocument({ source: file2 }, { caption: `🎨 Variant 2 — Shablon #${tmpl2?.replace('template_','')||'B'}\n📌 ${topic}\n📊 ${count} ta slayd` });
+            await ctx.reply(`✅ Ikkala variant tayyor! 🎉\n\n${paket.emoji} ${paket.nom}\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}\n\nYoqqanini saqlang! 😊`);
+            try { fs.unlinkSync(file1); } catch(_) {}
+            try { fs.unlinkSync(file2); } catch(_) {}
+
         } else {
+            // ODDIY
             const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang);
             await ctx.replyWithDocument({ source: filePath }, {
                 caption: t(userId, 'slideReady1', paket, topic, count, price, isFree)
             });
-            try { fs.unlinkSync(filePath); } catch (_) {}
+            try { fs.unlinkSync(filePath); } catch(_) {}
         }
 
-        addOrder(userId, 'slides', { topic, count, price, dual: isDual });
+        ctx.session.slideType = null;
+        ctx.session.userPicPath = null;
+        ctx.session.templateId = null;
+        ctx.session.templateId2 = null;
+
+        addOrder(userId, 'slides', { topic, count, price, type: slideType, dual: isDual });
         updateUser(userId, { step: 'MAIN_MENU' });
         return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
     } catch (err) {
         console.error('Slayd xato:', err.message);
         if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
+        ctx.session.slideType = null;
+        ctx.session.userPicPath = null;
         updateUser(userId, { step: 'MAIN_MENU' });
         return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
     }
