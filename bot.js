@@ -86,7 +86,17 @@ const PRICES = {
     rasm        : 1000,
     pdf         : 0
 };
-const FREE_SLIDES = 1;
+const FREE_SLIDES = 9999; // Yoz aksiyasi — hammasi bepul!
+
+// ========== YOZ AKSIYASI REJIMI ==========
+// true = hammasi bepul (1-sentabrgacha)
+// false = oddiy to'lov tizimi
+const SUMMER_FREE = true;
+const SUMMER_END = new Date('2025-09-01T00:00:00');
+
+function isSummerFree() {
+    return SUMMER_FREE && new Date() < SUMMER_END;
+}
 
 // ==================== YORDAMCHI: TIL Olish ====================
 function getLang(userId) {
@@ -860,6 +870,7 @@ const KB = {
         const l = T[lang] || T.uz;
         const rows = [
             [`🆕 ${l.slideCreate}`, `📄 ${l.imgToPdf}`],
+            [`🖼 Kollaj Yaratish`, `📦 PDF Siqish`],
             [`📚 ${l.referatMustaqil}`, `✍️ ${l.essayEsse}`],
             [`📝 ${l.test}`, `🔲 ${l.crossword}`],
             [`🎓 ${l.tezis}`, `📰 ${l.maqola}`],
@@ -1632,6 +1643,118 @@ async function makeInfoPptx(topic, aiText, userId, lang = 'uz') {
 }
 
 // ==================== RASMDAN PDF (JIMP) ====================
+
+// ==================== KOLLAJ YARATISH ====================
+async function makeCollagePdf(imagePaths, title, userId) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const PDFDocument = require('pdfkit');
+            const count = imagePaths.length;
+            const pdfPath = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.pdf`);
+            const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
+            const writeStream = fs.createWriteStream(pdfPath);
+            doc.pipe(writeStream);
+
+            // A4 o'lcham
+            const pageW = 595.28, pageH = 841.89;
+            const margin = 15;
+
+            // Har sahifaga nechta rasm joylashini hisoblash
+            // 2 rasm: 1x2, 3 rasm: 1 yuqori + 2 pastda, 4 rasm: 2x2
+            const imgsPerPage = count <= 4 ? count : 4;
+            const totalPages = Math.ceil(count / imgsPerPage);
+
+            for (let page = 0; page < totalPages; page++) {
+                doc.addPage({ size: 'A4', margin: 0 });
+                const pageImgs = imagePaths.slice(page * imgsPerPage, (page + 1) * imgsPerPage);
+                const n = pageImgs.length;
+
+                // Sarlavha joyi
+                const titleH = title ? 40 : 0;
+                const contentH = pageH - titleH - margin * 2;
+                const contentW = pageW - margin * 2;
+
+                if (title) {
+                    doc.fontSize(16).fillColor('#1a237e').font('Helvetica-Bold')
+                       .text(title, margin, 12, { width: contentW, align: 'center' });
+                }
+
+                // Layout hisoblash
+                let layout = [];
+                if (n === 1) {
+                    layout = [{ x: margin, y: margin + titleH, w: contentW, h: contentH }];
+                } else if (n === 2) {
+                    const half = (contentH - margin) / 2;
+                    layout = [
+                        { x: margin, y: margin + titleH, w: contentW, h: half },
+                        { x: margin, y: margin + titleH + half + margin, w: contentW, h: half }
+                    ];
+                } else if (n === 3) {
+                    const topH = contentH * 0.55;
+                    const botH = contentH - topH - margin;
+                    const botW = (contentW - margin) / 2;
+                    layout = [
+                        { x: margin, y: margin + titleH, w: contentW, h: topH },
+                        { x: margin, y: margin + titleH + topH + margin, w: botW, h: botH },
+                        { x: margin + botW + margin, y: margin + titleH + topH + margin, w: botW, h: botH }
+                    ];
+                } else {
+                    // 4 ta: 2x2
+                    const halfW = (contentW - margin) / 2;
+                    const halfH = (contentH - margin) / 2;
+                    layout = [
+                        { x: margin, y: margin + titleH, w: halfW, h: halfH },
+                        { x: margin + halfW + margin, y: margin + titleH, w: halfW, h: halfH },
+                        { x: margin, y: margin + titleH + halfH + margin, w: halfW, h: halfH },
+                        { x: margin + halfW + margin, y: margin + titleH + halfH + margin, w: halfW, h: halfH }
+                    ];
+                }
+
+                // Rasmlarni joylashtirish
+                for (let i = 0; i < pageImgs.length; i++) {
+                    const imgPath = pageImgs[i];
+                    const slot = layout[i];
+                    try {
+                        const jimpImg = await Jimp.read(imgPath);
+                        const origW = jimpImg.getWidth();
+                        const origH = jimpImg.getHeight();
+
+                        // Aspect ratio saqlagan holda slot ichiga sig'dirish
+                        const scaleW = slot.w / origW;
+                        const scaleH = slot.h / origH;
+                        const scale = Math.min(scaleW, scaleH);
+                        const drawW = origW * scale;
+                        const drawH = origH * scale;
+                        const offsetX = slot.x + (slot.w - drawW) / 2;
+                        const offsetY = slot.y + (slot.h - drawH) / 2;
+
+                        const convertedPath = imgPath + '_coll.jpg';
+                        await jimpImg.quality(88).writeAsync(convertedPath);
+                        doc.image(convertedPath, offsetX, offsetY, { width: drawW, height: drawH });
+                        try { fs.unlinkSync(convertedPath); } catch(_) {}
+
+                        // Ramka
+                        doc.rect(slot.x, slot.y, slot.w, slot.h)
+                           .lineWidth(0.5).strokeColor('#cccccc').stroke();
+                    } catch(imgErr) {
+                        console.error('Kollaj rasm xato:', imgErr.message);
+                    }
+                }
+
+                // Sahifa raqami
+                doc.fontSize(9).fillColor('#999999')
+                   .text(`${page + 1} / ${totalPages}`, pageW - 60, pageH - 20, { width: 50, align: 'right' });
+            }
+
+            doc.end();
+            writeStream.on('finish', () => resolve(pdfPath));
+            writeStream.on('error', reject);
+        } catch(err) {
+            reject(err);
+        }
+    });
+}
+
 async function imagesToPdf(imagePaths, userId) {
     return new Promise(async (resolve, reject) => {
         try {
@@ -1846,14 +1969,46 @@ bot.hears([/🆕 .*/, '🆕 Slayd Yaratish', '🆕 Создать Слайд', '
     const user = getUser(userId);
     if (!user.registered) return;
     const lang = getLang(userId);
-    const freeLeft = Math.max(0, FREE_SLIDES - (user.freeUsed || 0));
     updateUser(userId, { step: 'SLAYD_TOPIC' });
-    let msg = t(userId, 'slideInfo', user);
-    if (freeLeft > 0) msg = msg.replace('📌 Masukkan topik:', t(userId, 'freeSlideLeft', freeLeft) + '📌 Masukkan topik:');
-    return ctx.reply(msg, KB.cancel(lang));
+
+    const summerMsg = isSummerFree()
+        ? `\n\n🎉 YOZ AKSIYASI — 1-SENTABRGACHA!\n🔥 Barcha xizmatlar MUTLAQO BEPUL!\n`
+        : '';
+
+    const paketlar = lang === 'ru'
+        ? `🎁 Пробный — БЕСПЛАТНО (до 4 слайдов)\n⚡ Iqtidor — 2,000 сум (5–12)\n💎 Professional — 3,500 сум (13–20)\n👑 Premium — 6,000 сум (21–30)`
+        : lang === 'en'
+        ? `🎁 Trial — FREE (up to 4 slides)\n⚡ Iqtidor — 2,000 sum (5–12)\n💎 Professional — 3,500 sum (13–20)\n👑 Premium — 6,000 sum (21–30)`
+        : `🎁 Sinov — BEPUL (4 tagacha)\n⚡ Iqtidor — 2,000 so'm (5–12)\n💎 Professional — 3,500 so'm (13–20)\n👑 Premium — 6,000 so'm (21–30)`;
+
+    return ctx.reply(
+        `🆕 Slayd Yaratish${summerMsg}\n\n💰 Balansingiz: ${(user.balance||0).toLocaleString()} so'm\n\n📦 Paketlar:\n${paketlar}\n🌟 Infinity — 50,000 so'm/oy (cheksiz)\n\n📌 Mavzuni kiriting:`,
+        KB.cancel(lang)
+    );
 });
 
 // --- RASMDAN PDF ---
+
+// ==================== KOLLAJ YARATISH ====================
+bot.hears(['🖼 Kollaj Yaratish', '🖼 Создать Коллаж', '🖼 Create Collage', '🖼 Buat Kolase'], async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+    const lang = getLang(userId);
+    ctx.session.collageImages = [];
+    ctx.session.collageTitle = null;
+    updateUser(userId, { step: 'COLLAGE_TITLE' });
+    return ctx.reply(
+        `🖼 Kollaj Yaratish — BEPUL!\n\n` +
+        `📌 Kollaj tepasiga sarlavha yozilsinmi?\n\n` +
+        `✏️ Sarlavha yozing yoki "O'tkazib yuborish" bosing:`,
+        Markup.keyboard([
+            [`⏭ O'tkazib yuborish`],
+            [`❌ ${T[lang]?.cancel || T.uz.cancel}`]
+        ]).resize()
+    );
+});
+
 bot.hears([/📄 .*/, '📄 Rasmdan PDF', '📄 Фото в PDF', '📄 Image to PDF', '📄 Gambar ke PDF'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
@@ -2078,6 +2233,34 @@ bot.on('photo', async (ctx) => {
     const lang = getLang(userId);
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
 
+
+    // ==================== KOLLAJ RASM QABUL ====================
+    if (user.step === 'COLLAGE_WAITING') {
+        if (!ctx.session.collageImages) ctx.session.collageImages = [];
+        try {
+            const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+            const imgRes = await fetch(fileLink.href);
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+            const tmpPath = path.join(TEMP_DIR, `coll_${userId}_${Date.now()}.jpg`);
+            fs.writeFileSync(tmpPath, imgBuf);
+            ctx.session.collageImages.push(tmpPath);
+        } catch(e) {
+            return ctx.reply('😔 Rasm yuklab olishda xato. Qayta yuboring.');
+        }
+        const n = ctx.session.collageImages.length;
+        if (n >= 4) {
+            return buildAndSendCollage(ctx, userId);
+        }
+        return ctx.reply(
+            `✅ ${n}-rasm qabul qilindi!\n\n` +
+            `${4 - n} ta yana yuboring yoki "Kollaj Yaratish" bosing.`,
+            Markup.keyboard([
+                [`📄 Kollaj Yaratish`],
+                [`❌ ${T[getLang(userId)]?.cancel || T.uz.cancel}`]
+            ]).resize()
+        );
+    }
+
     // SLAYD uchun /pic rasm qabul qilish
     if (user.step === 'SLAYD_PIC_WAIT') {
         try {
@@ -2166,6 +2349,41 @@ async function buildAndSendPdf(ctx, userId) {
     }
 }
 
+
+async function buildAndSendCollage(ctx, userId) {
+    const lang = getLang(userId);
+    const images = ctx.session.collageImages || [];
+    if (images.length < 2) {
+        return ctx.reply(
+            `📸 Kamida 2 ta rasm kerak!\nHozir: ${images.length} ta.`,
+            Markup.keyboard([[`📄 Kollaj Yaratish`], [`❌ ${T[lang]?.cancel || T.uz.cancel}`]]).resize()
+        );
+    }
+    const title = ctx.session.collageTitle || null;
+    await ctx.reply(`⏳ Kollaj tayyorlanmoqda...\n\n🖼 ${images.length} ta rasm birlashtirilmoqda...`);
+    try {
+        const pdfPath = await makeCollagePdf(images, title, userId);
+        const caption = `✅ Kollaj tayyor! 🎉\n\n` +
+            `🖼 ${images.length} ta rasm\n` +
+            `${title ? `📌 Sarlavha: "${title}"\n` : ''}` +
+            `💰 BEPUL`;
+        await ctx.replyWithDocument({ source: pdfPath }, { caption });
+        addOrder(userId, 'collage', { count: images.length, title, price: 0 });
+        images.forEach(p => { try { fs.unlinkSync(p); } catch(_) {} });
+        try { fs.unlinkSync(pdfPath); } catch(_) {}
+        ctx.session.collageImages = [];
+        ctx.session.collageTitle = null;
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply('✅ Bajarildi!', KB.mainMenu(lang, userId === ADMIN_ID));
+    } catch(err) {
+        console.error('Kollaj xato:', err.message);
+        images.forEach(p => { try { fs.unlinkSync(p); } catch(_) {} });
+        ctx.session.collageImages = [];
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
+    }
+}
+
 // ==================== YORDAMCHI: TO'LOV TEKSHIRISH ====================
 async function checkAndDeductBalance(ctx, userId, price, nextStep) {
     const user = getUser(userId);
@@ -2227,7 +2445,7 @@ bot.on('text', async (ctx) => {
         if (isNaN(count) || count < 1 || count > 30) return ctx.reply(t(userId, 'invalidInput'));
         ctx.session.slideCount = count;
 
-        const isFree = (user.freeUsed || 0) < FREE_SLIDES;
+        const isFree = isSummerFree() || (user.freeUsed || 0) < FREE_SLIDES;
         const paket = getPaket(count, isFree, lang);
         const price = isFree ? 0 : paket.narx;
         ctx.session.slidePrice = price;
@@ -2310,6 +2528,41 @@ bot.on('text', async (ctx) => {
     }
 
     // ====== PDF ======
+
+    // ====== KOLLAJ SARLAVHA ======
+    if (user.step === 'COLLAGE_TITLE') {
+        const skipWords = ["O'tkazib", 'Пропустить', 'Skip', 'Lewati'];
+        if (skipWords.some(w => text.includes(w))) {
+            ctx.session.collageTitle = null;
+        } else {
+            ctx.session.collageTitle = text.trim();
+        }
+        ctx.session.collageImages = [];
+        updateUser(userId, { step: 'COLLAGE_WAITING' });
+        return ctx.reply(
+            `🖼 Ajoyib!\n\n` +
+            `${ctx.session.collageTitle ? `📌 Sarlavha: "${ctx.session.collageTitle}"\n\n` : ''}` +
+            `Endi rasmlarni yuboring (2-4 ta):\n\n` +
+            `✅ 2 ta: pastma-past joylashadi\n` +
+            `✅ 3 ta: bitta katta + ikkita kichik\n` +
+            `✅ 4 ta: 2×2 grid\n\n` +
+            `📸 Rasmlarni yuboring:`,
+            Markup.keyboard([
+                [`📄 Kollaj Yaratish`],
+                [`❌ ${T[lang]?.cancel || T.uz.cancel}`]
+            ]).resize()
+        );
+    }
+
+    // ====== KOLLAJ TAYYOR TUGMASI ======
+    if (user.step === 'COLLAGE_WAITING') {
+        const doneWords = ['Kollaj Yaratish', 'Создать', 'Create', 'Buat'];
+        if (doneWords.some(w => text.includes(w))) {
+            return buildAndSendCollage(ctx, userId);
+        }
+        return ctx.reply(`📸 Rasmlarni yuboring yoki "Kollaj Yaratish" bosing.`);
+    }
+
     if (user.step === 'PDF_WAITING') {
         const pdfCreateWords = ['PDF yaratish', 'Создать PDF', 'Create PDF', 'Buat PDF'];
         const addMoreWords = ['Yana rasm', 'Добавить фото', 'Add more', 'Tambah'];
@@ -2342,7 +2595,7 @@ bot.on('text', async (ctx) => {
         else diffText = medWords[0];
         ctx.session.testDiff = diffText;
         const price = PRICES.test;
-        if ((user.balance || 0) < price) {
+        if (!isSummerFree() && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2361,7 +2614,7 @@ bot.on('text', async (ctx) => {
         const count = parseInt(text) || 10;
         const price = PRICES.crossword;
         ctx.session.crossCount = count;
-        if ((user.balance || 0) < price) {
+        if (!isSummerFree() && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
