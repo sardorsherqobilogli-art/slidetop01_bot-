@@ -1644,113 +1644,113 @@ async function makeInfoPptx(topic, aiText, userId, lang = 'uz') {
 
 // ==================== RASMDAN PDF (JIMP) ====================
 
-// ==================== SARLAVHA PNG RENDER (sharp + SVG) ====================
-// O'zbek harflarini (g', o', sh, ch, ʻ, ʼ) to'g'ri ko'rsatish uchun SVG → PNG
-async function renderTitlePng(title, pageW, titleH) {
-    const sharp = require('sharp');
-    // Sarlavhani ikkiga bo'lish
-    const words = title.trim().split(' ');
-    const mid = Math.ceil(words.length / 2);
-    const line1 = words.slice(0, mid).join(' ');
-    const line2 = words.slice(mid).join(' ');
-    const hasTwo = line2.trim().length > 0;
+// ==================== SARLAVHA PNG (Jimp orqali — hech narsa o'rnatish shart emas) ====================
+async function makeTitleImage(title, widthPx, heightPx) {
+    // Jimp bilan oq fonda qora matn — Unicode harflar uchun bitmap font ishlatiladi
+    // Jimp built-in FONT_SANS_16_BLACK kabi fontlar faqat ASCII — biz boshqa yondashuvdan foydalanamiz:
+    // Sarlavhani Jimp bilan rasm sifatida yaratish MUMKIN EMAS to'g'ri (unicode yo'q)
+    // Shuning uchun biz PDFKit ga matnni PRINT qilamiz, lekin encoding muammosi bor.
+    // YECHIM: sarlavhani alohida PDF sahifadan rasm sifatida olib yopishtiramiz emas,
+    // balki faqat ASCII-safe harflar bilan ishlash + transliteration qilamiz.
+    return null; // ishlatilmaydi, quyida inline yoziladi
+}
 
-    // SVG ichida Unicode to'g'ri ko'rsatiladi
-    const escLine1 = line1.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    const escLine2 = line2.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-
-    const fontSize = 28;
-    const lineH    = fontSize * 1.45;
-    const svgH     = Math.round(titleH);
-    const svgW     = Math.round(pageW);
-    const y1 = hasTwo
-        ? Math.round(svgH / 2 - lineH * 0.55)
-        : Math.round(svgH / 2 - fontSize * 0.35);
-    const y2 = y1 + Math.round(lineH);
-
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}">
-  <rect width="${svgW}" height="${svgH}" fill="white"/>
-  <text x="${svgW/2}" y="${y1}" font-family="DejaVu Sans, Arial, sans-serif"
-        font-size="${fontSize}" font-weight="bold" text-anchor="middle"
-        fill="#111111">${escLine1}</text>
-  ${hasTwo ? `<text x="${svgW/2}" y="${y2}" font-family="DejaVu Sans, Arial, sans-serif"
-        font-size="${fontSize}" font-weight="bold" text-anchor="middle"
-        fill="#111111">${escLine2}</text>` : ''}
-</svg>`;
-
-    const pngBuf = await sharp(Buffer.from(svg)).png().toBuffer();
-    return pngBuf;
+// O'zbek maxsus harflarini PDF uchun xavfsiz variantga o'girish
+function safeTitle(str) {
+    return str
+        .replace(/ʻ/g, "'")   // ʻ → '
+        .replace(/ʼ/g, "'")   // ʼ → '
+        .replace(/‘/g, "'")   // ' → '
+        .replace(/’/g, "'")   // ' → '
+        .replace(/“/g, '"')   // " → "
+        .replace(/”/g, '"')   // " → "
+        .replace(/'/g, "'");  // standard apostrophe
 }
 
 // ==================== KOLLAJ YARATISH ====================
 async function makeCollagePdf(imagePaths, title, userId) {
     return new Promise(async (resolve, reject) => {
         try {
-            const sharp = require('sharp');
-            const count = imagePaths.length;
+            const count    = imagePaths.length;
+            const pdfPath  = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.pdf`);
 
-            // ── O'lchamlar (A4 Portrait, px 72dpi) ──
-            const pageW  = 595.28;
-            const pageH  = 841.89;
-            const pad    = 18;    // sahifa chetidan masofa
-            const gap    = 10;    // rasmlar orasidagi bo'shliq
+            // ── A4 o'lchamlari ──
+            const pageW = 595.28, pageH = 841.89;
+            const pad   = 18;   // chet bo'shliq
+            const gap   = 10;   // rasmlar orasidagi bo'shliq
 
             const imgsPerPage = 4;
             const totalPages  = Math.ceil(count / imgsPerPage);
 
-            const pdfPath = path.join(TEMP_DIR, `kollaj_${userId}_${Date.now()}.pdf`);
             const doc = new PDFDocument({ autoFirstPage: false, margin: 0 });
             const writeStream = fs.createWriteStream(pdfPath);
             doc.pipe(writeStream);
 
             for (let page = 0; page < totalPages; page++) {
                 doc.addPage({ size: 'A4', margin: 0 });
+
                 // Oq fon
                 doc.rect(0, 0, pageW, pageH).fill('#FFFFFF');
 
                 const pageImgs = imagePaths.slice(page * imgsPerPage, (page + 1) * imgsPerPage);
                 const n = pageImgs.length;
 
-                // ── SARLAVHA: SVG → PNG → PDF ──
-                // sharp SVG render Unicode (O'zbek harflari) ni to'g'ri ko'rsatadi
+                // ── SARLAVHA (Jimp bitmap rasm sifatida) ──
+                // O'zbek harflarini xavfsiz variantga o'giramiz
                 let titleBlockH = pad;
                 if (title) {
-                    const words   = title.trim().split(' ');
-                    const mid     = Math.ceil(words.length / 2);
-                    const line1   = words.slice(0, mid).join(' ');
-                    const line2   = words.slice(mid).join(' ');
-                    const hasTwo  = line2.trim().length > 0;
-                    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-                    const fs28    = 28;
-                    const lh      = Math.round(fs28 * 1.5);
-                    const svgW    = Math.round(pageW);
-                    const svgH    = hasTwo ? pad + lh * 2 + pad : pad + lh + pad;
-                    const y1      = pad + fs28;
-                    const y2      = y1 + lh;
+                    const safeT = safeTitle(title);
+                    const words = safeT.trim().split(' ');
+                    const mid   = Math.ceil(words.length / 2);
+                    const line1 = words.slice(0, mid).join(' ');
+                    const line2 = words.slice(mid).join(' ');
+                    const hasTwo = line2.trim().length > 0;
 
-                    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}">
-  <rect width="${svgW}" height="${svgH}" fill="white"/>
-  <text x="${svgW/2}" y="${y1}" font-family="Arial,Helvetica,sans-serif"
-        font-size="${fs28}" font-weight="bold" text-anchor="middle" fill="#111111">${esc(line1)}</text>
-  ${hasTwo ? `<text x="${svgW/2}" y="${y2}" font-family="Arial,Helvetica,sans-serif"
-        font-size="${fs28}" font-weight="bold" text-anchor="middle" fill="#111111">${esc(line2)}</text>` : ''}
-</svg>`;
+                    // Jimp bilan sarlavha rasmini yaratamiz
+                    const titleW = Math.round(pageW * 2); // 2x retina
+                    const fontSize = 18; // shrift o'lchami
+                    const lineH  = Math.round(fontSize * 3.2);
+                    const titleH = hasTwo ? pad * 2 + lineH * 2 : pad * 2 + lineH;
+                    const titleWpx = titleW;
+                    const titleHpx = Math.round(titleH * 2);
+
                     try {
-                        // sharp SVG ni PNG bufferga aylantiradi — Unicode to'g'ri
-                        const titlePng = await sharp(Buffer.from(svg))
-                            .png({ quality: 95 })
-                            .toBuffer();
+                        // Jimp bilan oq fon yaratamiz
+                        const titleImg = new Jimp(titleWpx, titleHpx, 0xFFFFFFFF);
+
+                        // Jimp built-in font yuklash
+                        const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
+
+                        // Har bir qatorni markazda yozish
+                        const printLine = (text, yPos) => {
+                            titleImg.print(
+                                font, 0, yPos,
+                                { text, alignmentX: Jimp.HORIZONTAL_ALIGN_CENTER, alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE },
+                                titleWpx, lineH * 2
+                            );
+                        };
+
+                        if (hasTwo) {
+                            printLine(line1, Math.round(pad));
+                            printLine(line2, Math.round(pad + lineH * 2));
+                        } else {
+                            printLine(line1, Math.round(titleHpx / 2 - lineH));
+                        }
+
                         const titleTmp = path.join(TEMP_DIR, `title_${userId}_${page}.png`);
-                        fs.writeFileSync(titleTmp, titlePng);
-                        doc.image(titleTmp, 0, 0, { width: pageW, height: svgH });
+                        await titleImg.writeAsync(titleTmp);
+                        doc.image(titleTmp, 0, 0, { width: pageW, height: titleH });
                         try { fs.unlinkSync(titleTmp); } catch(_) {}
-                        titleBlockH = svgH;
-                    } catch(sharpErr) {
-                        // sharp yo'q bo'lsa, fallback: Helvetica (lot harflar uchun)
-                        console.error('Sharp SVG xato:', sharpErr.message);
-                        doc.font('Helvetica-Bold').fontSize(20).fillColor('#111111')
-                           .text(title, pad, pad + 5, { width: pageW - pad*2, align: 'center' });
-                        titleBlockH = pad + 30 + pad;
+                        titleBlockH = titleH;
+                    } catch(titleErr) {
+                        // Font yuklanmasa — oddiy PDFKit matn (ASCII harflar uchun)
+                        console.error('Jimp title xato:', titleErr.message);
+                        const safeText = safeTitle(title);
+                        const fz = 18;
+                        const th = pad * 2 + fz * (hasTwo ? 2.8 : 1.8);
+                        doc.font('Helvetica-Bold').fontSize(fz).fillColor('#111111')
+                           .text(safeText, pad, pad + 4, { width: pageW - pad * 2, align: 'center' });
+                        titleBlockH = th;
                     }
                 }
 
@@ -1778,58 +1778,50 @@ async function makeCollagePdf(imagePaths, title, userId) {
                         { x: pad+cellW+gap, y: gridTop+topH+gap, w: cellW, h: botH }
                     ];
                 } else {
-                    // 4 ta: to'liq 2×2 grid
+                    // 4 ta: to'liq teng 2×2 grid
                     const cellW = (gridW - gap) / 2;
                     const cellH = (gridH - gap) / 2;
                     layout = [
-                        { x: pad,           y: gridTop,            w: cellW, h: cellH },
-                        { x: pad+cellW+gap, y: gridTop,            w: cellW, h: cellH },
-                        { x: pad,           y: gridTop+cellH+gap,  w: cellW, h: cellH },
-                        { x: pad+cellW+gap, y: gridTop+cellH+gap,  w: cellW, h: cellH }
+                        { x: pad,           y: gridTop,           w: cellW, h: cellH },
+                        { x: pad+cellW+gap, y: gridTop,           w: cellW, h: cellH },
+                        { x: pad,           y: gridTop+cellH+gap, w: cellW, h: cellH },
+                        { x: pad+cellW+gap, y: gridTop+cellH+gap, w: cellW, h: cellH }
                     ];
                 }
 
-                // ── RASMLARNI JOYLASHTIRISH (cover crop) ──
+                // ── RASMLARNI JOYLASHTIRISH (cover crop — to'liq to'ldiradi) ──
                 for (let i = 0; i < pageImgs.length; i++) {
                     const imgPath = pageImgs[i];
-                    const slot = layout[i];
+                    const slot    = layout[i];
                     try {
-                        const slotWpx = Math.round(slot.w * 2); // 2x o'lcham sifat uchun
-                        const slotHpx = Math.round(slot.h * 2);
+                        const jimpImg = await Jimp.read(imgPath);
+                        const origW = jimpImg.getWidth();
+                        const origH = jimpImg.getHeight();
 
-                        // sharp cover crop — har qanday razmer bo'lsin, to'liq to'ldiradi
-                        const cropBuf = await sharp(imgPath)
-                            .resize(slotWpx, slotHpx, { fit: 'cover', position: 'centre' })
-                            .jpeg({ quality: 88 })
-                            .toBuffer();
-                        const cropTmp = path.join(TEMP_DIR, `crop_${userId}_${page}_${i}.jpg`);
-                        fs.writeFileSync(cropTmp, cropBuf);
-                        doc.image(cropTmp, slot.x, slot.y, { width: slot.w, height: slot.h });
-                        try { fs.unlinkSync(cropTmp); } catch(_) {}
+                        // Cover: slotni to'liq to'ldirish (ortiqchasini kesib)
+                        const slotWpx = Math.round(slot.w);
+                        const slotHpx = Math.round(slot.h);
+                        const scale   = Math.max(slotWpx / origW, slotHpx / origH);
+                        const scaledW = Math.round(origW * scale);
+                        const scaledH = Math.round(origH * scale);
+                        const cropX   = Math.round((scaledW - slotWpx) / 2);
+                        const cropY   = Math.round((scaledH - slotHpx) / 2);
 
-                        // Ramka
+                        jimpImg
+                            .resize(scaledW, scaledH)
+                            .crop(cropX, cropY, slotWpx, slotHpx);
+
+                        const tmpPath = imgPath + `_c${i}.jpg`;
+                        await jimpImg.quality(90).writeAsync(tmpPath);
+                        doc.image(tmpPath, slot.x, slot.y, { width: slot.w, height: slot.h });
+                        try { fs.unlinkSync(tmpPath); } catch(_) {}
+
+                        // Ingichka ramka
                         doc.rect(slot.x, slot.y, slot.w, slot.h)
-                           .lineWidth(1).strokeColor('#bbbbbb').stroke();
+                           .lineWidth(1).strokeColor('#aaaaaa').stroke();
                     } catch(imgErr) {
-                        // Jimp fallback (sharp yo'q yoki rasm buzuq)
-                        try {
-                            const jimpImg = await Jimp.read(imgPath);
-                            const origW = jimpImg.getWidth(), origH = jimpImg.getHeight();
-                            const scale  = Math.max(slot.w / origW, slot.h / origH);
-                            const scaledW = Math.round(origW * scale);
-                            const scaledH = Math.round(origH * scale);
-                            const cropX   = Math.round((scaledW - slot.w) / 2);
-                            const cropY   = Math.round((scaledH - slot.h) / 2);
-                            jimpImg.resize(scaledW, scaledH).crop(cropX, cropY, Math.round(slot.w), Math.round(slot.h));
-                            const fbTmp = imgPath + '_fb.jpg';
-                            await jimpImg.quality(88).writeAsync(fbTmp);
-                            doc.image(fbTmp, slot.x, slot.y, { width: slot.w, height: slot.h });
-                            try { fs.unlinkSync(fbTmp); } catch(_) {}
-                            doc.rect(slot.x, slot.y, slot.w, slot.h).lineWidth(1).strokeColor('#bbbbbb').stroke();
-                        } catch(e2) {
-                            console.error('Jimp fallback xato:', e2.message);
-                            doc.rect(slot.x, slot.y, slot.w, slot.h).fill('#eeeeee');
-                        }
+                        console.error(`Rasm[${i}] xato:`, imgErr.message);
+                        doc.rect(slot.x, slot.y, slot.w, slot.h).fill('#eeeeee');
                     }
                 }
 
