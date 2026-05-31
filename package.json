@@ -1,3 +1,149 @@
+
+Claude finished the response
+
+bot (32).js
+JS
+
+
+package (5).json
+26 lines
+
+JSON
+
+Menga bot.js va package.json berilgan.
+Quyidagi 5 ta o'zgarishni qil.
+Har biridan keyin node --check qil.
+---
+1. isSummerFree() ni doimiy true qil:
+TOPING:
+function isSummerFree() {
+    return SUMMER_FREE && new Date() < SUMMER_END;
+}
+ALMASHTIRING:
+function isSummerFree() {
+    return true; // 2026 yil bepul davr
+}
+---
+2. KB.mainMenu() ni almashtiring — 
+faqat shu tugmalar ko'rinsin:
+Qator 1: ["📄 Rasmdan PDF", "🔗 QR Kod"]
+Qator 2: ["📝 Test", "🔲 Krassvord"]
+Qator 3: ["📦 PDF Siqish", "🎬 MP4 → MP3"]
+Qator 4: ["💰 Balansim", "🎁 Bepul Olish"]
+Qator 5: ["❓ Yordam", "⚙️ Sozlamalar"]
+Admin uchun qo'shimcha: ["👨‍💻 Admin Panel"]
+Yashiriladigan (kod saqlanadi, menyu yo'q):
+Slayd, Referat, Mustaqil, Insho, Tezis, 
+Maqola, Infografika, Rasm yaratish
+---
+3. /start xabarini yangilang — 
+yangi foydalanuvchi ro'yxatdan o'tganda:
+"🎉 Xush kelibsiz, [Ism]!
+Sizga 2 OY davomida barcha xizmatlardan 
+BEPUL foydalanish sovg'a qilindi! 🎁
+📅 Shart: @SlaydTop_01 kanalida qoling
+💡 3 oy qolsangiz → yana 2 oy bepul!
+Hoziroq boshlang 👇"
+---
+4. Xabar ohangini yoqimli qiling:
+- "Xatolik yuz berdi" → 
+  "😊 Kichik nosozlik, qayta urining!"
+- "Mavzuni kiriting" → 
+  "✍️ Ajoyib! Mavzuni yozing:"
+- "Tayyor" → 
+  "🎉 Mana, tayyor! Yoqdi deb umid qilaman 😊"
+---
+5. users jadvaliga freeUntil maydoni qo'shing:
+Yangi foydalanuvchi yaratilganda:
+freeUntil = bugundan 2 oy keyin (ISO string)
+Barcha o'zgarishlardan keyin:
+node --check bot.js .    SHU BUYRUQNI  YARATIB BER  BOT.JS INI MUKMAMAL HAM PACKAGE NI AGAR BUYRUWQNI AYTGAN BOLSA
+
+Show more
+21:28
+
+Viewed a file, ran a command
+Viewed a file, ran a command
+Endi barcha 5 ta o'zgarishni qilamiz.
+
+
+Copy bot.js to working directory
+Copy bot.js to working directory
+O'zgarish 1: isSummerFree() ni doimiy true qilish
+
+
+Edited a file, ran a command
+Edited a file, ran a command
+O'zgarish 2: KB.mainMenu() ni yangi tugmalar bilan almashtirish
+
+
+Edited a file, ran a command
+Edited a file, ran a command
+O'zgarish 3: /start xabarini yangilash
+
+
+Edited a file, ran a command
+Edited a file, ran a command
+O'zgarish 4: Xabar ohangini yoqimli qilish
+
+
+Update error message tone in uz locale
+Update error message tone in uz locale
+Endi "Mavzuni kiriting" → "✍️ Ajoyib! Mavzuni yozing:" va "Tayyor" → "🎉 Mana, tayyor!" o'zgartirish. Bu botda chooseTopic va ready kalitlarida:
+
+
+Edited 2 files, ran a command
+Edited 2 files, ran a command
+O'zgarish 5: users jadvaliga freeUntil maydoni + getUser() da yangi foydalanuvchi yaratilganda 2 oy qo'shish
+
+
+Add freeUntil field to new user creation and update DB schema
+Add freeUntil field to new user creation and update DB schema
+DB schema o'zgarishsiz — freeUntil JSON ichida saqlanadi. getUser() ichida yangi foydalanuvchi yaratilganda freeUntil qo'shamiz:
+
+
+Edited a file, ran a command
+Edited a file, ran a command
+Barcha 5 ta o'zgarish muvaffaqiyatli. Endi package.json ni ham output ga ko'chiramiz:
+
+
+Ran a command, read a file
+Ran a command, read a file
+Barcha 5 ta o'zgarish amalga oshirildi va har biridan keyin node --check tekshiruvi o'tkazildi ✅
+
+Quyida nima qilindi:
+
+1. isSummerFree() — endi har doim true qaytaradi (2026 yil bepul davr).
+
+2. KB.mainMenu() — yangi 5 qator tugmalar:
+
+📄 Rasmdan PDF | 🔗 QR Kod
+📝 Test | 🔲 Krassvord
+📦 PDF Siqish | 🎬 MP4 → MP3
+💰 Balansim | 🎁 Bepul Olish
+❓ Yordam | ⚙️ Sozlamalar
+(admin uchun) 👨‍💻 Admin Panel
+Slayd, Referat, Mustaqil, Insho, Tezis, Maqola, Infografika, Rasm — kod saqlanib qoldi, faqat asosiy menyudan olib tashlandi.
+
+3. /start xabari — yangi foydalanuvchi ro'yxatdan o'tganda "Xush kelibsiz, [Ism]! Sizga 2 OY davomida..." xabari chiqadi.
+
+4. Xabar ohanlari — error → "😊 Kichik nosozlik, qayta urining!", chooseTopic → "✍️ Ajoyib! Mavzuni yozing:", done → "🎉 Mana, tayyor! Yoqdi deb umid qilaman 😊"
+
+5. freeUntil maydoni — yangi foydalanuvchi yaratilganda freeUntil = bugundan 2 oy keyingi ISO string saqlanadi.
+
+
+Bot
+JS 
+
+Package
+Code · JSON 
+
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Package · JSON
 {
   "name": "slaydtop-bot",
   "version": "4.0.0",
