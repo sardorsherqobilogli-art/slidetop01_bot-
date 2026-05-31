@@ -12,6 +12,7 @@ const PDFDocument = require('pdfkit');
 const fs         = require('fs');
 const path       = require('path');
 const http       = require('http');
+const { execSync, exec } = require('child_process');
 const https      = require('https');
 
 // ==================== KONFIGURATSIYA ====================
@@ -21,7 +22,7 @@ const ADMIN_ID       = Number(process.env.ADMIN_ID     || 0);
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'admin';
 const ADMIN_PHONE    = process.env.ADMIN_PHONE          || '+998901234567';
 const BOT_USERNAME   = process.env.BOT_USERNAME         || 'SlaydTop_2_bot';
-const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME   || 'slaydtop_kanal';
+const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || 'SlaydTop_01';
 const CARD_NUMBER = process.env.CARD_NUMBER || '';
 const CARD_OWNER  = process.env.CARD_OWNER  || '';
 
@@ -1846,9 +1847,62 @@ bot.use(async (ctx, next) => {
 });
 
 // ==================== START ====================
+
+// ==================== KANAL OBUNA TEKSHIRUVI ====================
+async function isSubscribed(userId) {
+    try {
+        const member = await bot.telegram.getChatMember('@SlaydTop_01', userId);
+        return ['member','administrator','creator'].includes(member.status);
+    } catch(_) {
+        return true; // xato bo'lsa ruxsat ber
+    }
+}
+
+async function checkAndAskSubscribe(ctx) {
+    const userId = ctx.from.id;
+    if (userId === ADMIN_ID) return true;
+    const subscribed = await isSubscribed(userId);
+    if (!subscribed) {
+        await ctx.reply(
+            '📢 Botdan foydalanish uchun kanalimizga a\'zo bo\'ling!\n\n' +
+            '👉 https://t.me/SlaydTop_01\n\n' +
+            'A\'zo bo\'lgandan keyin /start bosing.',
+            {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '📢 Kanalga O\'tish', url: 'https://t.me/SlaydTop_01' },
+                        { text: '✅ A\'zo bo\'ldim', callback_data: 'check_sub' }
+                    ]]
+                }
+            }
+        );
+        return false;
+    }
+    return true;
+}
+
 bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
+
+    // Kanal obuna tekshiruvi
+    if (userId !== ADMIN_ID) {
+        const ok = await isSubscribed(userId);
+        if (!ok) {
+            return ctx.reply(
+                '📢 Botdan foydalanish uchun kanalimizga a\'zo bo\'ling!\n\n' +
+                '✅ A\'zo bo\'lgandan keyin /start bosing.',
+                {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '📢 Kanalga O\'tish', url: 'https://t.me/SlaydTop_01' },
+                            { text: '✅ A\'zo bo\'ldim', callback_data: 'check_sub' }
+                        ]]
+                    }
+                }
+            );
+        }
+    }
 
     // Referral tekshirish
     const startPayload = ctx.startPayload;
@@ -1884,6 +1938,25 @@ bot.action(/lang_(uz|ru|en|id)/, async (ctx) => {
     await ctx.answerCbQuery();
     await ctx.editMessageText('✅');
     return ctx.reply(T[lang]?.enterName || T.uz.enterName, KB.cancel(lang));
+});
+
+// ==================== KANAL TEKSHIRUV CALLBACK ====================
+bot.action('check_sub', async (ctx) => {
+    const userId = ctx.from.id;
+    await ctx.answerCbQuery();
+    const ok = await isSubscribed(userId);
+    if (ok) {
+        await ctx.editMessageText('✅ Rahmat! Kanalga a\'zo bo\'ldingiz!');
+        const user = getUser(userId);
+        const lang = getLang(userId);
+        if (!user.registered) {
+            updateUser(userId, { step: 'LANG_SELECT' });
+            return ctx.reply(T[lang]?.welcome || T.uz.welcome, KB.langSelect());
+        }
+        return ctx.reply(t(userId, 'mainMenu'), KB.mainMenu(lang, userId === ADMIN_ID));
+    } else {
+        return ctx.answerCbQuery('Hali a\'zo emassiz! Avval kanalga a\'zo bo\'ling.', { show_alert: true });
+    }
 });
 
 // ==================== BAHOLASH CALLBACK ====================
@@ -2594,6 +2667,26 @@ bot.on('text', async (ctx) => {
         return ctx.reply(t(userId, 'pdfCreateOrSend'), KB.pdfMore(lang));
     }
 
+    // ====== QR INPUT ======
+    if (user.step === 'QR_INPUT') {
+        updateUser(userId, { step: 'MAIN_MENU' });
+        try {
+            const QRCode = require('qrcode');
+            const qrPath = path.join(TEMP_DIR, `qr_${userId}_${Date.now()}.png`);
+            await QRCode.toFile(qrPath, text, {
+                width: 400, margin: 2,
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+            await ctx.replyWithPhoto({ source: qrPath }, {
+                caption: `✅ QR Kod tayyor!\n\n🔗 ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
+            });
+            try { fs.unlinkSync(qrPath); } catch(_) {}
+        } catch(e) {
+            await ctx.reply('😔 Xatolik. Qayta urining.');
+        }
+        return;
+    }
+
     // ====== TEST ======
     if (user.step === 'TEST_TOPIC') {
         if (text.length < 3) return ctx.reply(t(userId, 'topicTooShort'));
@@ -3118,6 +3211,177 @@ async function doCreateRasm(ctx, userId) {
         return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
     }
 }
+
+// ==================== QR KOD ====================
+bot.command('qr', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+
+    const text = ctx.message.text.replace('/qr', '').trim();
+    if (!text || text.length < 3) {
+        return ctx.reply(
+            `🔗 QR Kod Yaratish\n\n` +
+            `Ishlatish: /qr [havola yoki matn]\n\n` +
+            `Masalan:\n` +
+            `/qr https://youtube.com/...\n` +
+            `/qr https://instagram.com/...\n` +
+            `/qr Sardor Yoldoshev, +998901234567\n\n` +
+            `✅ BEPUL!`
+        );
+    }
+
+    try {
+        const QRCode = require('qrcode');
+        const qrPath = path.join(TEMP_DIR, `qr_${userId}_${Date.now()}.png`);
+        await QRCode.toFile(qrPath, text, {
+            width: 400, margin: 2,
+            color: { dark: '#000000', light: '#ffffff' }
+        });
+        await ctx.replyWithPhoto({ source: qrPath }, {
+            caption: `✅ QR Kod tayyor!\n\n🔗 Havola: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
+        });
+        try { fs.unlinkSync(qrPath); } catch(_) {}
+    } catch(e) {
+        console.error('QR xato:', e.message);
+        return ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
+    }
+});
+
+bot.hears([/🔗 .*QR.*/, '🔗 QR Kod', '🔗 QR Code'], async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+    updateUser(userId, { step: 'QR_INPUT' });
+    return ctx.reply(
+        `🔗 QR Kod Yaratish\n\nHavola yoki matnni yuboring:\n\nMasalan: https://youtube.com/...\nYoki: Ism, telefon raqam\n\n✅ BEPUL!`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// ==================== FAYL QABUL QILISH ====================
+bot.on('document', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    const lang = getLang(userId);
+    if (!user.registered) return;
+
+    const doc = ctx.message.document;
+    const mime = doc.mime_type || '';
+    const fileName = doc.file_name || 'fayl';
+
+    if (doc.file_size > 50 * 1024 * 1024) {
+        return ctx.reply('😔 Fayl hajmi 50MB dan katta. Kichikroq fayl yuboring.');
+    }
+
+    await ctx.reply('⏳ Fayl qabul qilindi. Tayyorlanmoqda...');
+
+    try {
+        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+        const ext = path.extname(fileName) || '.bin';
+        const inputPath = path.join(TEMP_DIR, `in_${userId}_${Date.now()}${ext}`);
+
+        await new Promise((resolve, reject) => {
+            const proto = fileLink.href.startsWith('https') ? https : http;
+            const file = fs.createWriteStream(inputPath);
+            proto.get(fileLink.href, res => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', reject);
+        });
+
+        // PPTX → PDF
+        if (mime.includes('presentation') || ext === '.pptx' || ext === '.ppt') {
+            await ctx.reply("📊 PPTX → PDF ga o'girilmoqda...");
+            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+            const pdfName = path.basename(inputPath, ext) + '.pdf';
+            const pdfPath = path.join(TEMP_DIR, pdfName);
+            if (fs.existsSync(pdfPath)) {
+                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Format buzilmadi` });
+                try { fs.unlinkSync(pdfPath); } catch(_) {}
+            } else {
+                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // WORD → PDF
+        if (mime.includes('word') || ext === '.docx' || ext === '.doc') {
+            await ctx.reply("📝 Word → PDF ga o'girilmoqda...");
+            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+            const pdfName = path.basename(inputPath, ext) + '.pdf';
+            const pdfPath = path.join(TEMP_DIR, pdfName);
+            if (fs.existsSync(pdfPath)) {
+                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Matn va jadvallar saqlandi` });
+                try { fs.unlinkSync(pdfPath); } catch(_) {}
+            } else {
+                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // PDF SIQISH
+        if (mime === 'application/pdf' || ext === '.pdf') {
+            await ctx.reply('📦 PDF siqilmoqda...');
+            const outPath = path.join(TEMP_DIR, `compressed_${userId}_${Date.now()}.pdf`);
+            try {
+                execSync(
+                    `ghostscript -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outPath}" "${inputPath}"`,
+                    { timeout: 60000 }
+                );
+                const origSize = fs.statSync(inputPath).size;
+                const newSize  = fs.statSync(outPath).size;
+                const saved = Math.round((1 - newSize / origSize) * 100);
+                await ctx.replyWithDocument({ source: outPath }, {
+                    caption: `✅ PDF siqildi!\n\n📊 Asl hajm: ${(origSize/1024/1024).toFixed(2)} MB\n📉 Yangi hajm: ${(newSize/1024/1024).toFixed(2)} MB\n💾 Tejaldi: ${saved}%`
+                });
+                try { fs.unlinkSync(outPath); } catch(_) {}
+            } catch(e) {
+                await ctx.reply('😔 PDF siqishda xatolik. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // MP4 → MP3
+        if (mime.includes('video') || ext === '.mp4' || ext === '.avi' || ext === '.mkv') {
+            await ctx.reply('🎵 Video dan ovoz ajratilmoqda...');
+            const mp3Path = path.join(TEMP_DIR, `audio_${userId}_${Date.now()}.mp3`);
+            const ffmpeg = require('fluent-ffmpeg');
+            const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+            ffmpeg.setFfmpegPath(ffmpegPath);
+
+            await new Promise((resolve, reject) => {
+                ffmpeg(inputPath)
+                    .noVideo()
+                    .audioCodec('libmp3lame')
+                    .audioBitrate('128k')
+                    .save(mp3Path)
+                    .on('end', resolve)
+                    .on('error', reject);
+            });
+
+            await ctx.replyWithAudio({ source: mp3Path }, {
+                caption: `✅ MP3 tayyor!\n\n🎵 ${fileName} → MP3\n🎧 Sifat: 128kbps`
+            });
+            try { fs.unlinkSync(mp3Path); } catch(_) {}
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // Noma'lum fayl
+        try { fs.unlinkSync(inputPath); } catch(_) {}
+        return ctx.reply(
+            `😊 Bu fayl turi qo'llab-quvvatlanmaydi.\n\n✅ Qabul qilinadi:\n📊 PPTX — PDF ga o'girish\n📝 DOCX — PDF ga o'girish\n📄 PDF — Siqish\n🎬 MP4 — MP3 ga o'girish`
+        );
+
+    } catch(e) {
+        console.error('Document handler xato:', e.message);
+        return ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
+    }
+});
 
 // ==================== XATO HANDLER ====================
 bot.catch((err, ctx) => {
