@@ -96,7 +96,7 @@ const SUMMER_FREE = true;
 const SUMMER_END = new Date('2025-09-01T00:00:00');
 
 function isSummerFree() {
-    return SUMMER_FREE && new Date() < SUMMER_END;
+    return true; // 2026 yil bepul davr
 }
 
 // ==================== YORDAMCHI: TIL Olish ====================
@@ -112,7 +112,7 @@ const T = {
         enterName: `✨ Ajoyib tanlov!\n\nEndi tanishib olaylik 😊\nIsmingizni kiriting:\n(Masalan: Sardor)`,
         enterSurname: (name) => `🎉 Zo'r ism, ${name}!\n\nFamilyangizni kiriting:\n(Masalan: Yoldoshev)`,
         registered: (name, freeCount) =>
-            `🏆 Tabriklaymiz, ${name}!\n\nSiz muvaffaqiyatli ro'yxatdan o'tdingiz!\n\n🎁 Sizga BEPUL sovg'alar:\n✅ ${freeCount} ta slayd — BEPUL\n✅ Rasmdan PDF — MUTLAQO BEPUL (doimo)\n\nBoshlaylikmi? 👇`,
+            `🎉 Xush kelibsiz, ${name}!\nSizga 2 OY davomida barcha xizmatlardan \nBEPUL foydalanish sovg'a qilindi! 🎁\n📅 Shart: @SlaydTop_01 kanalida qoling\n💡 3 oy qolsangiz → yana 2 oy bepul!\nHoziroq boshlang 👇`,
         mainMenu: `Xizmatni tanlang 👇`,
         balance: (u) =>
             `💰 Sizning hisobingiz\n\n👤 ${u.name} ${u.surname}\n💳 Balans: ${(u.balance||0).toLocaleString()} so'm\n🎁 Bepul slayd: ${Math.max(0, FREE_SLIDES-(u.freeUsed||0))} ta qoldi\n📊 Jami buyurtmalar: ${u.totalOrders||0} ta`,
@@ -138,7 +138,7 @@ const T = {
         ready: (type, topic, price) =>
             `✅ ${type} tayyor! 🎉\n\n📌 Mavzu: ${topic}\n💰 Narx: ${price > 0 ? price.toLocaleString()+' so\'m' : 'BEPUL'}\n\n1️⃣ dan 5️⃣ gacha baholang:`,
         rateThank: (r) => r===5 ? '👏 Ajoyib! Katta rahmat!' : r>=4 ? '👏 Juda yaxshi! Rahmat!' : r>=3 ? '🙂 Rahmat! Yana yaxshilashga harakat qilamiz!' : '🙏 Fikringiz uchun rahmat!',
-        error: `😔 Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.`,
+        error: `😊 Kichik nosozlik, qayta urining!`,
         invalidInput: `😊 Iltimos, to'g'ri ma'lumot kiriting.`,
         pdfFree: `📄 Rasmdan PDF — MUTLAQO BEPUL! 🎁\n\nRasmingizni yuboring, men PDF ga aylantirib beraman!\n\n✅ JPG, PNG, WEBP qabul qilinadi\n✅ Bir vaqtda 10 tagacha rasm\n✅ Cheksiz foydalanish mumkin\n\nRasmni yuboring: 👇`,
         pdfGot: (n) => `✅ Rasm qabul qilindi! (${n} ta)\n\nYana rasm qo'shmoqchimisiz?`,
@@ -195,7 +195,7 @@ const T = {
             `🎁 Sinov       — BEPUL (1 ta slayd)\n⚡ Iqtidor     — 2,000 so'm (5–12 ta)\n💎 Professional — 3,500 so'm (13–20 ta)\n👑 Premium     — 6,000 so'm (21–30 ta)\n🌟 Infinity    — 50,000 so'm/oy (cheksiz)\n\n📌 Mavzuni kiriting:`,
         chooseCount: 'Nechta?',
         chooseDiff: 'Qiyinlik darajasini tanlang:',
-        chooseTopic: 'Mavzuni kiriting:',
+        chooseTopic: '✍️ Ajoyib! Mavzuni yozing:',
         choosePages: 'Nechta bet?',
         enterWords: 'Nechta so\'z bo\'lsin?',
         chooseType: 'Turini tanlang:',
@@ -272,7 +272,7 @@ const T = {
         referralCount: (n) => `👥 Taklif qilganlar: ${n} ta`,
         selectService: 'Xizmatni tanlang',
         creatingPdf: 'PDF yaratilmoqda',
-        done: 'Bajarildi',
+        done: '🎉 Mana, tayyor! Yoqdi deb umid qilaman 😊',
         startText: 'Bot ishga tushdi',
         stopText: 'Bot to\'xtatildi',
         serverRunning: (port) => `Health check: port ${port}`,
@@ -809,11 +809,15 @@ function getPaket(count, isFree, lang = 'uz') {
 function getUser(userId) {
     const users = loadJson(USERS_FILE, {});
     if (!users[userId]) {
+        // Bugundan 2 oy keyin
+        const freeUntilDate = new Date();
+        freeUntilDate.setMonth(freeUntilDate.getMonth() + 2);
         users[userId] = {
             id: userId, name: '', surname: '', lang: 'uz',
             balance: 0, freeUsed: 0, totalOrders: 0,
             registered: false, step: 'LANG_SELECT',
-            invitedBy: null, invitedCount: 0
+            invitedBy: null, invitedCount: 0,
+            freeUntil: freeUntilDate.toISOString()
         };
         saveJson(USERS_FILE, users);
     }
@@ -868,18 +872,17 @@ const KB = {
         [Markup.button.callback('🇺🇿 O\'zbek', 'lang_uz'), Markup.button.callback('🇷🇺 Русский', 'lang_ru'), Markup.button.callback('🇬🇧 English', 'lang_en'), Markup.button.callback('🇮🇩 Indonesia', 'lang_id')]
     ]),
     mainMenu: (lang = 'uz', isAdmin = false) => {
-        const l = T[lang] || T.uz;
+        // Ko'rinadigan tugmalar (yangi tartib)
         const rows = [
-            [`🆕 ${l.slideCreate}`, `📄 ${l.imgToPdf}`],
-            [`🖼 Kollaj Yaratish`, `📦 PDF Siqish`],
-            [`📚 ${l.referatMustaqil}`, `✍️ ${l.essayEsse}`],
-            [`📝 ${l.test}`, `🔲 ${l.crossword}`],
-            [`🎓 ${l.tezis}`, `📰 ${l.maqola}`],
-            [`📊 ${l.infografika}`, `🖼 ${l.rasmYaratish}`],
-            [`💰 ${l.balansim}`, `🎁 ${l.bepulOlish}`],
-            [`❓ ${l.yordam}`, `⚙️ ${l.sozlamalar}`],
+            [`📄 Rasmdan PDF`, `🔗 QR Kod`],
+            [`📝 Test`, `🔲 Krassvord`],
+            [`📦 PDF Siqish`, `🎬 MP4 → MP3`],
+            [`💰 Balansim`, `🎁 Bepul Olish`],
+            [`❓ Yordam`, `⚙️ Sozlamalar`],
         ];
-        if (isAdmin) rows.push([`👨‍💻 ${l.adminPanel}`]);
+        if (isAdmin) rows.push([`👨‍💻 Admin Panel`]);
+        // Kod saqlanadi, lekin menyuda ko'rinmaydi:
+        // Slayd, Referat, Mustaqil, Insho, Tezis, Maqola, Infografika, Rasm yaratish
         return Markup.keyboard(rows).resize();
     },
     cancel: (lang = 'uz') => {
