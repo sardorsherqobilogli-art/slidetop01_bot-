@@ -19,7 +19,7 @@ const https      = require('https');
 const BOT_TOKEN      = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const GROQ_KEY       = (process.env.GROQ_API_KEY       || '').trim();
 const ADMIN_ID       = Number(process.env.ADMIN_ID     || 0);
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'admin';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'Top_SardoryoldoshevUz';
 const ADMIN_PHONE    = process.env.ADMIN_PHONE          || '+998901234567';
 const BOT_USERNAME   = process.env.BOT_USERNAME         || 'SlaydTop_2_bot';
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || 'SlaydTop_01';
@@ -89,14 +89,30 @@ const PRICES = {
 };
 const FREE_SLIDES = 9999; // Yoz aksiyasi — hammasi bepul!
 
-// ========== YOZ AKSIYASI REJIMI ==========
-// true = hammasi bepul (1-sentabrgacha)
-// false = oddiy to'lov tizimi
+// ========== BEPUL REJIM ==========
+// true = hammasi mutlaqo bepul
 const SUMMER_FREE = true;
-const SUMMER_END = new Date('2025-09-01T00:00:00');
+const SUMMER_END = new Date('2099-01-01T00:00:00');
 
 function isSummerFree() {
-    return true; // 2026 yil bepul davr
+    return true; // Hammasi bepul!
+}
+
+// 1 oy bepul berish (referral orqali)
+function giveOneMonthFree(userId) {
+    const user = getUser(userId);
+    const now = Date.now();
+    const oneMonth = 30 * 24 * 60 * 60 * 1000;
+    const freeUntil = Math.max(user.freeUntil || now, now) + oneMonth;
+    updateUser(userId, { freeUntil });
+    return new Date(freeUntil).toLocaleDateString('uz-UZ');
+}
+
+function hasFreeAccess(userId) {
+    const user = getUser(userId);
+    if (isSummerFree()) return true;
+    if (user.freeUntil && user.freeUntil > Date.now()) return true;
+    return false;
 }
 
 // ==================== YORDAMCHI: TIL Olish ====================
@@ -112,7 +128,7 @@ const T = {
         enterName: `✨ Ajoyib tanlov!\n\nEndi tanishib olaylik 😊\nIsmingizni kiriting:\n(Masalan: Sardor)`,
         enterSurname: (name) => `🎉 Zo'r ism, ${name}!\n\nFamilyangizni kiriting:\n(Masalan: Yoldoshev)`,
         registered: (name, freeCount) =>
-            `🎉 Xush kelibsiz, ${name}!\nSizga 2 OY davomida barcha xizmatlardan \nBEPUL foydalanish sovg'a qilindi! 🎁\n📅 Shart: @SlaydTop_01 kanalida qoling\n💡 3 oy qolsangiz → yana 2 oy bepul!\nHoziroq boshlang 👇`,
+            `🎉 Xush kelibsiz, ${name}!\n\n✅ Barcha xizmatlar MUTLAQO BEPUL!\n\n🎁 Bonuslar:\n• Rasmdan PDF — DOIMO BEPUL ♾️\n• QR Kod — BEPUL ✅\n• Test & Krassvord — BEPUL ✅\n• Slayd, Referat, Insho — BEPUL ✅\n\n👥 Do'st taklif qiling:\nHar 5 do'st = +1 OY BEPUL kirish!\n\n📅 Shart: @SlaydTop_01 kanalida qoling\nHoziroq boshlang 👇`,
         mainMenu: `Xizmatni tanlang 👇`,
         balance: (u) =>
             `💰 Sizning hisobingiz\n\n👤 ${u.name} ${u.surname}\n💳 Balans: ${(u.balance||0).toLocaleString()} so'm\n🎁 Bepul slayd: ${Math.max(0, FREE_SLIDES-(u.freeUsed||0))} ta qoldi\n📊 Jami buyurtmalar: ${u.totalOrders||0} ta`,
@@ -128,7 +144,7 @@ const T = {
         payApproved: (amount, newBal) =>
             `✅ To'lovingiz tasdiqlandi! 🏆\nBalansingizga ${amount.toLocaleString()} so'm qo'shildi!\n💰 Yangi balans: ${newBal.toLocaleString()} so'm`,
         free: (userId, botUser) =>
-            `🎁 Bepul xizmatlar\n\n1️⃣ Rasmdan PDF — DOIMO BEPUL ♾️\n\n2️⃣ Do'st taklif qiling:\nHar 5 do'st = +3,000 so'm balans\n\n🔗 Sizning havolangiz:\nhttps://t.me/${botUser}?start=ref_${userId}`,
+            `🎁 Bepul xizmatlar\n\n1️⃣ Rasmdan PDF — DOIMO BEPUL ♾️\n2️⃣ QR Kod — MUTLAQO BEPUL ✅\n\n3️⃣ Do'st taklif qiling:\nHar 5 do'st = +3,000 so'm + 1 OY BEPUL kirish! 🎉\n\n📌 Qanday ishlaydi:\n1. Havolangizni do'stingizga yuboring\n2. Do'stingiz ro'yxatdan o'tadi\n3. 5 ta bo'lganda — 1 oy BEPUL!\n\n🔗 Sizning havolangiz:\nhttps://t.me/${botUser}?start=ref_${userId}`,
         settings: (u) =>
             `⚙️ Sozlamalar\n\n👤 Ism: ${u.name}\n📝 Familya: ${u.surname}\n🌐 Til: O'zbek 🇺🇿`,
         help: `❓ Yordam markazi\n\nMuammoingizni tanlang:`,
@@ -877,7 +893,7 @@ const KB = {
             [`📄 Rasmdan PDF`, `🔗 QR Kod`],
             [`📝 Test`, `🔲 Krassvord`],
             [`📦 PDF Siqish`, `🎬 MP4 → MP3`],
-            [`🎁 1 Oy Bepul Olish`],
+            [`💰 Balansim`, `🎁 Bepul Olish`],
             [`❓ Yordam`, `⚙️ Sozlamalar`],
         ];
         if (isAdmin) rows.push([`👨‍💻 Admin Panel`]);
@@ -1829,8 +1845,46 @@ async function imagesToPdf(imagePaths, userId) {
 }
 
 
-// ==================== BOT ====================
+// ==================== BOT YARATISH ====================
 const bot = new Telegraf(BOT_TOKEN);
+
+// ==================== KANAL OBUNA MIDDLEWARE ====================
+// Har bir xabar kelganda kanal obunasini tekshirish
+bot.use(async (ctx, next) => {
+    if (!ctx.from) return next();
+    const userId = ctx.from.id;
+    if (userId === ADMIN_ID) return next();
+    const user = getUser(userId);
+    // Faqat ro'yxatdan o'tgan foydalanuvchilar uchun tekshir
+    if (!user.registered) return next();
+
+    // Har 10 xabar'da bir tekshirish (uncha ko'p API call bo'lmasin)
+    const checkCount = (user._subCheckCount || 0) + 1;
+    updateUser(userId, { _subCheckCount: checkCount });
+    if (checkCount % 10 !== 0) return next();
+
+    const ok = await isSubscribed(userId);
+    if (!ok) {
+        const lang = getLang(userId);
+        const msg = lang === 'ru'
+            ? '📢 Вы покинули канал!\n\nДля продолжения работы с ботом подпишитесь:\n👉 https://t.me/SlaydTop_01'
+            : lang === 'en'
+            ? '📢 You left the channel!\n\nPlease rejoin to use the bot:\n👉 https://t.me/SlaydTop_01'
+            : '📢 Kanaldan chiqib ketdingiz!\n\nBotdan foydalanish uchun qayta a\'zo bo\'ling:\n👉 https://t.me/SlaydTop_01';
+        await ctx.reply(msg, {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '📢 Kanalga O\'tish', url: 'https://t.me/SlaydTop_01' },
+                    { text: '✅ A\'zo bo\'ldim', callback_data: 'check_sub' }
+                ]]
+            }
+        });
+        return; // next() chaqirma — blokla
+    }
+    return next();
+});
+
+
 bot.use(new LocalSession({ database: path.join(DATA_DIR, 'sessions.json') }).middleware());
 bot.use((ctx, next) => { if (!ctx.session) ctx.session = {}; return next(); });
 
@@ -1916,58 +1970,38 @@ bot.start(async (ctx) => {
             const inv = getUser(inviterId);
             const newCount = (inv.invitedCount || 0) + 1;
             updateUser(inviterId, { invitedCount: newCount });
-            // 1 do'st = 1 oy bepul qo'shish
-            const invFreeUntilDate = new Date(inv.freeUntil || new Date());
-            if (invFreeUntilDate < new Date()) invFreeUntilDate.setTime(new Date().getTime());
-            invFreeUntilDate.setMonth(invFreeUntilDate.getMonth() + 1);
-            updateUser(inviterId, { freeUntil: invFreeUntilDate.toISOString() });
-            const invLang = getLang(inviterId);
-            const dline = invFreeUntilDate.toLocaleDateString();
-            const msgs1 = { uz: `🎁 Do'stingiz qo'shildi! *1 OY BEPUL* qo'shildi! (${dline})`, ru: `🎁 Друг присоединился! *1 МЕСЯЦ БЕСПЛАТНО* (${dline})`, en: `🎁 Friend joined! *1 MONTH FREE* (${dline})`, id: `🎁 Teman bergabung! *1 BULAN GRATIS* (${dline})` };
-            try { await bot.telegram.sendMessage(inviterId, msgs1[invLang] || msgs1.uz, { parse_mode: 'Markdown' }); } catch (_) {}
+            if (newCount % 5 === 0) {
+                // Har 5 do'stda: 3000 so'm + 1 oy bepul
+                updateUser(inviterId, { balance: (inv.balance || 0) + 3000 });
+                const freeDate = giveOneMonthFree(inviterId);
+                const invLang = getLang(inviterId);
+                const bonusMsg = invLang === 'ru'
+                    ? `🎁 ${newCount} друзей присоединились!\n+3,000 сум на баланс!\n🎉 +1 месяц БЕСПЛАТНОГО доступа!\n📅 До: ${freeDate}`
+                    : invLang === 'en'
+                    ? `🎁 ${newCount} friends joined!\n+3,000 sum added!\n🎉 +1 month FREE access!\n📅 Until: ${freeDate}`
+                    : `🎁 ${newCount} ta do'stingiz qo'shildi!\n+3,000 so'm qo'shildi!\n🎉 +1 OY BEPUL kirish!\n📅 Gacha: ${freeDate}`;
+                try { await bot.telegram.sendMessage(inviterId, bonusMsg); } catch (_) {}
+            }
         }
     }
 
     const lang = getLang(userId);
     if (!user.registered) {
         updateUser(userId, { step: 'LANG_SELECT' });
-        // Jozibali kanalga a'zo bo'lish matnini ko'rsat
-        return ctx.reply(
-            `🌟 *SlaydTop* — barcha xizmatlar BEPUL!\n\n` +
-            `📜 Rasmdan PDF | 🔍 QR Kod | 📝 Test | 🔲 Krassvord | 🎬 MP4→MP3\n\n` +
-            `Boshlash uchun tilni tanlang 👇`,
-            { parse_mode: 'Markdown', ...KB.langSelect() }
-        );
+        return ctx.reply(T[lang]?.welcome || T.uz.welcome, KB.langSelect());
     }
 
     return ctx.reply(t(userId, 'mainMenu'), KB.mainMenu(lang, userId === ADMIN_ID));
 });
 
-// ==================== TIL TANLASH CALLBACK ====================
+// ==================== TIL TANLASH CALLBACK (TO'G'RILANGAN) ====================
 bot.action(/lang_(uz|ru|en|id)/, async (ctx) => {
     const lang = ctx.match[1];
     const userId = ctx.from.id;
-    const firstName = ctx.from.first_name || '';
-    // Ism/familya so'ramasdan to'g'ridan ro'yxatdan o'tkazish
-    updateUser(userId, {
-        lang,
-        name: firstName,
-        surname: '',
-        registered: true,
-        step: 'MAIN_MENU',
-        freeUsed: 0
-    });
+    updateUser(userId, { lang, step: 'WAITING_NAME' });
     await ctx.answerCbQuery();
     await ctx.editMessageText('✅');
-
-    const welcomeMsg = {
-        uz: `🎉 Xush kelibsiz!\n\nEndi siz barcha xizmatlardan\n**2 OY davomida MUTLAQO BEPUL** foydalanishingiz mumkin! 🕊️\n\n🎁 **Yana xushxabar:**\n• 3 oy kanalda qolsangiz → yana **2 oy bepul** qo'shiladi!\n• 1 do'st taklif qiling → shu zahoti **1 oy bepul** oling! ✨\n\nQani, ishni boshlaymizmi? 👇`,
-        ru: `🎉 Добро пожаловать!\n\nТеперь вы можете пользоваться всеми услугами **2 МЕСЯЦА БЕСПЛАТНО**! 🕊️\n\n🎁 **Ещё хорошие новости:**\n• Останетесь в канале 3 месяца → ещё **2 месяца бесплатно**!\n• Пригласите 1 друга → получите **1 месяц бесплатно**! ✨`,
-        en: `🎉 Welcome!\n\nYou can now use all services **FREE for 2 MONTHS**! 🕊️\n\n🎁 **More good news:**\n• Stay in channel 3 months → get **2 more months free**!\n• Invite 1 friend → get **1 month free**! ✨`,
-        id: `🎉 Selamat datang!\n\nAnda bisa menggunakan semua layanan **GRATIS 2 BULAN**! 🕊️\n\n🎁 **Kabar baik lagi:**\n• Tetap di channel 3 bulan → **2 bulan gratis lagi**!\n• Undang 1 teman → dapat **1 bulan gratis**! ✨`,
-    };
-    await ctx.reply(welcomeMsg[lang] || welcomeMsg.uz, { parse_mode: 'Markdown' });
-    return ctx.reply(T[lang]?.mainMenu || T.uz.mainMenu, KB.mainMenu(lang, userId === ADMIN_ID));
+    return ctx.reply(T[lang]?.enterName || T.uz.enterName, KB.cancel(lang));
 });
 
 // ==================== KANAL TEKSHIRUV CALLBACK ====================
@@ -2066,95 +2100,19 @@ bot.hears([/💰 .*/, '💰 Balansim', '💰 Мой Баланс', '💰 My Bala
 });
 
 // --- BEPUL OLISH ---
-bot.hears([/🎁 .*Bepul.*/, /🎁 .*1 Oy.*/, '🎁 1 Oy Bepul Olish', '🎁 Bepul olish'], async (ctx) => {
+bot.hears([/🎁 .*/, '🎁 Bepul olish', '🎁 Бесплатно', '🎁 Get Free', '🎁 Gratis'], async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
     if (!user.registered) return;
     const lang = getLang(userId);
-    const refLink = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
-    const freeUntil = user.freeUntil ? new Date(user.freeUntil).toLocaleDateString() : '---';
-    const msgs = {
-        uz: `🎁 *1 Oy Bepul Olish*\n\nQuyidagi maxsus havolangizni *1 nafar do'stingizga* yuboring.\nU botga kirishi bilan sizga avtomatik *1 oy bepul* qo'shiladi! \U0001F680\n\n🔗 Sizning havolangiz:\n${refLink}\n\n👥 Taklif qilganlar: ${user.invitedCount || 0} ta\n📅 Bepul muddat: ${freeUntil}\n\n✨ Ko'proq taklif = Ko'proq bepul muddat!`,
-        ru: `🎁 *1 Месяц Бесплатно*\n\nОтправьте эту ссылку *1 другу*.\nКогда он зайдёт в бота — вам автоматически добавится *1 месяц бесплатно*! \U0001F680\n\n🔗 Ваша ссылка:\n${refLink}\n\n👥 Приглашено: ${user.invitedCount || 0}\n📅 Бесплатно до: ${freeUntil}`,
-        en: `🎁 *Get 1 Month Free*\n\nShare this link with *1 friend*.\nWhen they join the bot — you get *1 month free* automatically! \U0001F680\n\n🔗 Your link:\n${refLink}\n\n👥 Invited: ${user.invitedCount || 0}\n📅 Free until: ${freeUntil}`,
-        id: `🎁 *Dapatkan 1 Bulan Gratis*\n\nBagikan link ini ke *1 teman*.\nSaat mereka bergabung — Anda otomatis dapat *1 bulan gratis*! \U0001F680\n\n🔗 Link Anda:\n${refLink}\n\n👥 Diundang: ${user.invitedCount || 0}\n📅 Gratis sampai: ${freeUntil}`,
-    };
-    return ctx.reply(msgs[lang] || msgs.uz, { parse_mode: 'Markdown', ...KB.mainMenu(lang, userId === ADMIN_ID) });
+    return ctx.reply(t(userId, 'free', userId, BOT_USERNAME) + `\n\n${t(userId, 'referralCount', user.invitedCount || 0)}`, KB.mainMenu(lang, userId === ADMIN_ID));
 });
 
 // --- YORDAM ---
 bot.hears([/❓ .*/, '❓ Yordam', '❓ Помощь', '❓ Help', '❓ Bantuan'], async (ctx) => {
     const userId = ctx.from.id;
     const lang = getLang(userId);
-    const helpText = {
-        uz: `❓ *Yordam va Qo'llanma*
-
-📋 *Mavjud xizmatlar:*
-
-📄 *Rasmdan PDF* — Rasmlaringizni PDF ga aylantiring
-  → Tugmani bosing → Rasmlarni yuboring → PDF tayyor!
-
-🔍 *QR Kod* — Havola yoki matndan QR kod yarating
-  → Tugmani bosing → Havolani yuboring → QR tayyor!
-
-📝 *Test Yaratish* — AI yordamida test yarating
-  → Tugmani bosing → Mavzuni yozing → Savollar sonini tanlang → Qiyinlikni tanlang
-
-🔲 *Krassvord* — AI yordamida krassvord yarating
-  → Tugmani bosing → Mavzuni yozing → Savollar sonini tanlang
-
-📦 *PDF Siqish* — Katta PDFni kichraytiring
-  → PDF faylni yuboring (fayl sifatida)
-
-🎬 *MP4 → MP3* — Videodan ovoz ajrating
-  → Video faylni yuboring (fayl sifatida)
-
-🎁 *1 Oy Bepul Olish* — Do'stni taklif qiling, 1 oy bepul oling!
-
-⚙️ *Sozlamalar* — Tilni o'zgartiring
-
-📞 *Admin bilan bog'lanish:* @${process.env.ADMIN_USERNAME || 'admin'}`,
-        ru: `❓ *Помощь и руководство*
-
-📋 *Доступные услуги:*
-
-📄 *Фото в PDF* → Отправьте фото → PDF готов!
-🔍 *QR Код* → Отправьте ссылку → QR готов!
-📝 *Тест* → Введите тему → Выберите количество
-🔲 *Кроссворд* → Введите тему → Выберите количество
-📦 *Сжать PDF* → Отправьте PDF файл
-🎬 *MP4→MP3* → Отправьте видео файл
-🎁 *1 Месяц бесплатно* → Пригласите друга!
-
-📞 Админ: @${process.env.ADMIN_USERNAME || 'admin'}`,
-        en: `❓ *Help & Guide*
-
-📋 *Available services:*
-
-📄 *Image to PDF* → Send photos → PDF ready!
-🔍 *QR Code* → Send link → QR ready!
-📝 *Test* → Enter topic → Choose count
-🔲 *Crossword* → Enter topic → Choose count
-📦 *Compress PDF* → Send PDF file
-🎬 *MP4→MP3* → Send video file
-🎁 *1 Month free* → Invite a friend!
-
-📞 Admin: @${process.env.ADMIN_USERNAME || 'admin'}`,
-        id: `❓ *Bantuan & Panduan*
-
-📋 *Layanan tersedia:*
-
-📄 *Gambar ke PDF* → Kirim foto → PDF siap!
-🔍 *Kode QR* → Kirim link → QR siap!
-📝 *Ujian* → Masukkan topik → Pilih jumlah
-🔲 *TTS* → Masukkan topik → Pilih jumlah
-📦 *Kompres PDF* → Kirim file PDF
-🎬 *MP4→MP3* → Kirim file video
-🎁 *1 Bulan gratis* → Undang teman!
-
-📞 Admin: @${process.env.ADMIN_USERNAME || 'admin'}`,
-    };
-    return ctx.reply(helpText[lang] || helpText.uz, { parse_mode: 'Markdown', ...KB.mainMenu(lang, userId === ADMIN_ID) });
+    return ctx.reply(t(userId, 'help'), KB.help(lang));
 });
 
 // --- SOZLAMALAR ---
@@ -2441,15 +2399,10 @@ bot.on('photo', async (ctx) => {
         if (!ctx.session.collageImages) ctx.session.collageImages = [];
         try {
             const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+            const imgRes = await fetch(fileLink.href);
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer());
             const tmpPath = path.join(TEMP_DIR, `coll_${userId}_${Date.now()}.jpg`);
-            await new Promise((resolve, reject) => {
-                const proto = fileLink.href.startsWith('https') ? https : http;
-                const file = fs.createWriteStream(tmpPath);
-                proto.get(fileLink.href, res => {
-                    res.pipe(file);
-                    file.on('finish', () => { file.close(); resolve(); });
-                }).on('error', err => { try { fs.unlinkSync(tmpPath); } catch(_){} reject(err); });
-            });
+            fs.writeFileSync(tmpPath, imgBuf);
             ctx.session.collageImages.push(tmpPath);
         } catch(e) {
             return ctx.reply('😔 Rasm yuklab olishda xato. Qayta yuboring.');
@@ -2515,15 +2468,10 @@ bot.on('photo', async (ctx) => {
 
         try {
             const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+            const imgRes = await fetch(fileLink.href);
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer());
             const tmpPath = path.join(TEMP_DIR, `img_${userId}_${Date.now()}.jpg`);
-            await new Promise((resolve, reject) => {
-                const proto = fileLink.href.startsWith('https') ? https : http;
-                const file = fs.createWriteStream(tmpPath);
-                proto.get(fileLink.href, res => {
-                    res.pipe(file);
-                    file.on('finish', () => { file.close(); resolve(); });
-                }).on('error', err => { try { fs.unlinkSync(tmpPath); } catch(_){} reject(err); });
-            });
+            fs.writeFileSync(tmpPath, imgBuf);
             ctx.session.pdfImages.push(tmpPath);
         } catch (e) {
             console.error('Rasm yuklash xato:', e.message);
@@ -2616,15 +2564,23 @@ bot.on('text', async (ctx) => {
     const text = ctx.message.text;
     const lang = getLang(userId);
 
-    // Registratsiya — ism/familya so'ramasdan
+    // Registratsiya
     if (!user.registered) {
+        if (user.step === 'WAITING_NAME') {
+            if (text.length < 2) return ctx.reply(t(userId, 'nameTooShort'));
+            updateUser(userId, { name: text, step: 'WAITING_SURNAME' });
+            return ctx.reply(t(userId, 'enterSurname', text), KB.cancel(lang));
+        }
+        if (user.step === 'WAITING_SURNAME') {
+            const cancelWords = ['Bekor', 'Отмена', 'Cancel', 'Batal'];
+            if (cancelWords.some(w => text.includes(w))) { updateUser(userId, { step: 'WAITING_NAME' }); return ctx.reply(t(userId, 'enterName')); }
+            if (text.length < 2) return ctx.reply(t(userId, 'surnameTooShort'));
+            updateUser(userId, { surname: text, registered: true, step: 'MAIN_MENU', freeUsed: 0 });
+            user = getUser(userId);
+            return ctx.reply(t(userId, 'registered', user.name, FREE_SLIDES), KB.mainMenu(lang, userId === ADMIN_ID));
+        }
         if (user.step === 'LANG_SELECT') return ctx.reply(t(userId, 'welcome'), KB.langSelect());
-        // Agar lang tanlangan bo'lsa, to'g'ridan ro'yxatdan o'tkaz
-        const firstName = ctx.from.first_name || 'Foydalanuvchi';
-        const theLang = user.lang || 'uz';
-        updateUser(userId, { name: firstName, surname: '', registered: true, step: 'MAIN_MENU', freeUsed: 0 });
-        user = getUser(userId);
-        return ctx.reply(t(userId, 'mainMenu'), KB.mainMenu(theLang, userId === ADMIN_ID));
+        return;
     }
 
     // Bekor qilish
@@ -2780,36 +2736,19 @@ bot.on('text', async (ctx) => {
         updateUser(userId, { step: 'MAIN_MENU' });
         try {
             const QRCode = require('qrcode');
-            const qrPngPath = path.join(TEMP_DIR, `qr_${userId}_${Date.now()}.png`);
-            await QRCode.toFile(qrPngPath, text, {
-                width: 600, margin: 3,
+            const qrPath = path.join(TEMP_DIR, `qr_${userId}_${Date.now()}.png`);
+            await QRCode.toFile(qrPath, text, {
+                width: 400, margin: 2,
                 color: { dark: '#000000', light: '#ffffff' }
             });
-            // Rasm sifatida yuborish
-            await ctx.replyWithPhoto({ source: qrPngPath }, {
+            await ctx.replyWithPhoto({ source: qrPath }, {
                 caption: `✅ QR Kod tayyor!\n\n🔗 ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
             });
-            // PDF sifatida ham yuborish
-            try {
-                const qrPdfPath = path.join(TEMP_DIR, `qr_pdf_${userId}_${Date.now()}.pdf`);
-                const pdfDoc = new PDFDocument({ size: 'A4', margin: 50 });
-                const pdfStream = fs.createWriteStream(qrPdfPath);
-                pdfDoc.pipe(pdfStream);
-                const imgW = 300, imgH = 300;
-                const pageW = 595.28;
-                pdfDoc.image(qrPngPath, (pageW - imgW) / 2, 100, { width: imgW, height: imgH });
-                pdfDoc.fontSize(14).text(text.slice(0, 100), 50, 420, { align: 'center' });
-                pdfDoc.end();
-                await new Promise((res, rej) => { pdfStream.on('finish', res); pdfStream.on('error', rej); });
-                await ctx.replyWithDocument({ source: qrPdfPath }, { caption: '📄 QR Kod PDF formatida!' });
-                try { fs.unlinkSync(qrPdfPath); } catch(_) {}
-            } catch(pdfErr) { console.error('QR PDF xato:', pdfErr.message); }
-            try { fs.unlinkSync(qrPngPath); } catch(_) {}
+            try { fs.unlinkSync(qrPath); } catch(_) {}
         } catch(e) {
             await ctx.reply('😔 Xatolik. Qayta urining.');
         }
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'mainMenu'), KB.mainMenu(lang, userId === ADMIN_ID));
+        return;
     }
 
     // ====== TEST ======
@@ -2835,8 +2774,8 @@ bot.on('text', async (ctx) => {
         else if (hardWords.some(w => text.includes(w))) diffText = hardWords[0];
         else diffText = medWords[0];
         ctx.session.testDiff = diffText;
-        const price = isSummerFree() ? 0 : PRICES.test;
-        if (price > 0 && (user.balance || 0) < price) {
+        const price = PRICES.test;
+        if (!isSummerFree() && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2853,9 +2792,9 @@ bot.on('text', async (ctx) => {
     }
     if (user.step === 'CROSS_COUNT') {
         const count = parseInt(text) || 10;
-        const price = isSummerFree() ? 0 : PRICES.crossword;
+        const price = PRICES.crossword;
         ctx.session.crossCount = count;
-        if (price > 0 && (user.balance || 0) < price) {
+        if (!isSummerFree() && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2880,7 +2819,7 @@ bot.on('text', async (ctx) => {
         const words = parseInt(text) || 500;
         const price = PRICES.essay;
         ctx.session.essayWords = words;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2905,7 +2844,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 10;
         const price = PRICES.referat;
         ctx.session.referatPages = pages;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2924,7 +2863,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 3;
         const price = PRICES.tezis;
         ctx.session.tezisPages = pages;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2943,7 +2882,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 3;
         const price = PRICES.maqola;
         ctx.session.maqolaPages = pages;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2956,7 +2895,7 @@ bot.on('text', async (ctx) => {
         if (text.length < 3) return ctx.reply(t(userId, 'infoTooShort'));
         const price = PRICES.infografika;
         ctx.session.infoTopic = text;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2968,7 +2907,7 @@ bot.on('text', async (ctx) => {
     if (user.step === 'RASM_DESC') {
         const price = PRICES.rasm;
         ctx.session.rasmDesc = text;
-        if ((user.balance || 0) < price) {
+        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -3138,15 +3077,14 @@ async function doCreateTest(ctx, userId) {
     const diff = ctx.session.testDiff || "O'rta";
     const price = PRICES.test;
 
-    const realPrice = isSummerFree() ? 0 : price;
     await ctx.reply(t(userId, 'creating'));
-    if (realPrice > 0) updateUser(userId, { balance: (user.balance||0) - realPrice });
+    updateUser(userId, { balance: (user.balance||0) - price });
 
     try {
         const aiText = await aiTest(topic, count, diff, lang);
-        if (!aiText) { if (realPrice > 0) updateUser(userId, { balance: (user.balance||0)+realPrice }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
         const filePath = await makeTestPptx(topic, aiText, userId, count, diff, lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'testReady', topic, count, realPrice) });
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'testReady', topic, count, price) });
         addOrder(userId, 'test', { topic, count, diff, price });
         try { fs.unlinkSync(filePath); } catch (_) {}
         updateUser(userId, { step: 'MAIN_MENU' });
@@ -3165,15 +3103,14 @@ async function doCreateCrossword(ctx, userId) {
     const count = ctx.session.crossCount || 10;
     const price = PRICES.crossword;
 
-    const realPrice = isSummerFree() ? 0 : price;
     await ctx.reply(t(userId, 'creating'));
-    if (realPrice > 0) updateUser(userId, { balance: (user.balance||0) - realPrice });
+    updateUser(userId, { balance: (user.balance||0) - price });
 
     try {
         const aiText = await aiCrossword(topic, count, lang);
-        if (!aiText) { if (realPrice > 0) updateUser(userId, { balance: (user.balance||0)+realPrice }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
         const filePath = await makeCrosswordPptx(topic, aiText, userId, count, lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'crossReady', topic, count, realPrice) });
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'crossReady', topic, count, price) });
         addOrder(userId, 'krassvord', { topic, count, price });
         try { fs.unlinkSync(filePath); } catch (_) {}
         updateUser(userId, { step: 'MAIN_MENU' });
