@@ -19,7 +19,7 @@ const https      = require('https');
 const BOT_TOKEN      = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const GROQ_KEY       = (process.env.GROQ_API_KEY       || '').trim();
 const ADMIN_ID       = Number(process.env.ADMIN_ID     || 0);
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'Top_SardoryoldoshevUz';
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME       || 'admin';
 const ADMIN_PHONE    = process.env.ADMIN_PHONE          || '+998901234567';
 const BOT_USERNAME   = process.env.BOT_USERNAME         || 'SlaydTop_2_bot';
 const CHANNEL_USERNAME = process.env.CHANNEL_USERNAME || 'SlaydTop_01';
@@ -89,30 +89,14 @@ const PRICES = {
 };
 const FREE_SLIDES = 9999; // Yoz aksiyasi — hammasi bepul!
 
-// ========== BEPUL REJIM ==========
-// true = hammasi mutlaqo bepul
+// ========== YOZ AKSIYASI REJIMI ==========
+// true = hammasi bepul (1-sentabrgacha)
+// false = oddiy to'lov tizimi
 const SUMMER_FREE = true;
-const SUMMER_END = new Date('2099-01-01T00:00:00');
+const SUMMER_END = new Date('2025-09-01T00:00:00');
 
 function isSummerFree() {
-    return true; // Hammasi bepul!
-}
-
-// 1 oy bepul berish (referral orqali)
-function giveOneMonthFree(userId) {
-    const user = getUser(userId);
-    const now = Date.now();
-    const oneMonth = 30 * 24 * 60 * 60 * 1000;
-    const freeUntil = Math.max(user.freeUntil || now, now) + oneMonth;
-    updateUser(userId, { freeUntil });
-    return new Date(freeUntil).toLocaleDateString('uz-UZ');
-}
-
-function hasFreeAccess(userId) {
-    const user = getUser(userId);
-    if (isSummerFree()) return true;
-    if (user.freeUntil && user.freeUntil > Date.now()) return true;
-    return false;
+    return true; // 2026 yil bepul davr
 }
 
 // ==================== YORDAMCHI: TIL Olish ====================
@@ -128,7 +112,7 @@ const T = {
         enterName: `✨ Ajoyib tanlov!\n\nEndi tanishib olaylik 😊\nIsmingizni kiriting:\n(Masalan: Sardor)`,
         enterSurname: (name) => `🎉 Zo'r ism, ${name}!\n\nFamilyangizni kiriting:\n(Masalan: Yoldoshev)`,
         registered: (name, freeCount) =>
-            `🎉 Xush kelibsiz, ${name}!\n\n✅ Barcha xizmatlar MUTLAQO BEPUL!\n\n🎁 Bonuslar:\n• Rasmdan PDF — DOIMO BEPUL ♾️\n• QR Kod — BEPUL ✅\n• Test & Krassvord — BEPUL ✅\n• Slayd, Referat, Insho — BEPUL ✅\n\n👥 Do'st taklif qiling:\nHar 5 do'st = +1 OY BEPUL kirish!\n\n📅 Shart: @SlaydTop_01 kanalida qoling\nHoziroq boshlang 👇`,
+            `🎉 Xush kelibsiz, ${name}!\nSizga 2 OY davomida barcha xizmatlardan \nBEPUL foydalanish sovg'a qilindi! 🎁\n📅 Shart: @SlaydTop_01 kanalida qoling\n💡 3 oy qolsangiz → yana 2 oy bepul!\nHoziroq boshlang 👇`,
         mainMenu: `Xizmatni tanlang 👇`,
         balance: (u) =>
             `💰 Sizning hisobingiz\n\n👤 ${u.name} ${u.surname}\n💳 Balans: ${(u.balance||0).toLocaleString()} so'm\n🎁 Bepul slayd: ${Math.max(0, FREE_SLIDES-(u.freeUsed||0))} ta qoldi\n📊 Jami buyurtmalar: ${u.totalOrders||0} ta`,
@@ -144,7 +128,7 @@ const T = {
         payApproved: (amount, newBal) =>
             `✅ To'lovingiz tasdiqlandi! 🏆\nBalansingizga ${amount.toLocaleString()} so'm qo'shildi!\n💰 Yangi balans: ${newBal.toLocaleString()} so'm`,
         free: (userId, botUser) =>
-            `🎁 Bepul xizmatlar\n\n1️⃣ Rasmdan PDF — DOIMO BEPUL ♾️\n2️⃣ QR Kod — MUTLAQO BEPUL ✅\n\n3️⃣ Do'st taklif qiling:\nHar 5 do'st = +3,000 so'm + 1 OY BEPUL kirish! 🎉\n\n📌 Qanday ishlaydi:\n1. Havolangizni do'stingizga yuboring\n2. Do'stingiz ro'yxatdan o'tadi\n3. 5 ta bo'lganda — 1 oy BEPUL!\n\n🔗 Sizning havolangiz:\nhttps://t.me/${botUser}?start=ref_${userId}`,
+            `🎁 Bepul xizmatlar\n\n1️⃣ Rasmdan PDF — DOIMO BEPUL ♾️\n\n2️⃣ Do'st taklif qiling:\nHar 5 do'st = +3,000 so'm balans\n\n🔗 Sizning havolangiz:\nhttps://t.me/${botUser}?start=ref_${userId}`,
         settings: (u) =>
             `⚙️ Sozlamalar\n\n👤 Ism: ${u.name}\n📝 Familya: ${u.surname}\n🌐 Til: O'zbek 🇺🇿`,
         help: `❓ Yordam markazi\n\nMuammoingizni tanlang:`,
@@ -1845,46 +1829,8 @@ async function imagesToPdf(imagePaths, userId) {
 }
 
 
-// ==================== BOT YARATISH ====================
+// ==================== BOT ====================
 const bot = new Telegraf(BOT_TOKEN);
-
-// ==================== KANAL OBUNA MIDDLEWARE ====================
-// Har bir xabar kelganda kanal obunasini tekshirish
-bot.use(async (ctx, next) => {
-    if (!ctx.from) return next();
-    const userId = ctx.from.id;
-    if (userId === ADMIN_ID) return next();
-    const user = getUser(userId);
-    // Faqat ro'yxatdan o'tgan foydalanuvchilar uchun tekshir
-    if (!user.registered) return next();
-
-    // Har 10 xabar'da bir tekshirish (uncha ko'p API call bo'lmasin)
-    const checkCount = (user._subCheckCount || 0) + 1;
-    updateUser(userId, { _subCheckCount: checkCount });
-    if (checkCount % 10 !== 0) return next();
-
-    const ok = await isSubscribed(userId);
-    if (!ok) {
-        const lang = getLang(userId);
-        const msg = lang === 'ru'
-            ? '📢 Вы покинули канал!\n\nДля продолжения работы с ботом подпишитесь:\n👉 https://t.me/SlaydTop_01'
-            : lang === 'en'
-            ? '📢 You left the channel!\n\nPlease rejoin to use the bot:\n👉 https://t.me/SlaydTop_01'
-            : '📢 Kanaldan chiqib ketdingiz!\n\nBotdan foydalanish uchun qayta a\'zo bo\'ling:\n👉 https://t.me/SlaydTop_01';
-        await ctx.reply(msg, {
-            reply_markup: {
-                inline_keyboard: [[
-                    { text: '📢 Kanalga O\'tish', url: 'https://t.me/SlaydTop_01' },
-                    { text: '✅ A\'zo bo\'ldim', callback_data: 'check_sub' }
-                ]]
-            }
-        });
-        return; // next() chaqirma — blokla
-    }
-    return next();
-});
-
-
 bot.use(new LocalSession({ database: path.join(DATA_DIR, 'sessions.json') }).middleware());
 bot.use((ctx, next) => { if (!ctx.session) ctx.session = {}; return next(); });
 
@@ -1971,16 +1917,9 @@ bot.start(async (ctx) => {
             const newCount = (inv.invitedCount || 0) + 1;
             updateUser(inviterId, { invitedCount: newCount });
             if (newCount % 5 === 0) {
-                // Har 5 do'stda: 3000 so'm + 1 oy bepul
                 updateUser(inviterId, { balance: (inv.balance || 0) + 3000 });
-                const freeDate = giveOneMonthFree(inviterId);
                 const invLang = getLang(inviterId);
-                const bonusMsg = invLang === 'ru'
-                    ? `🎁 ${newCount} друзей присоединились!\n+3,000 сум на баланс!\n🎉 +1 месяц БЕСПЛАТНОГО доступа!\n📅 До: ${freeDate}`
-                    : invLang === 'en'
-                    ? `🎁 ${newCount} friends joined!\n+3,000 sum added!\n🎉 +1 month FREE access!\n📅 Until: ${freeDate}`
-                    : `🎁 ${newCount} ta do'stingiz qo'shildi!\n+3,000 so'm qo'shildi!\n🎉 +1 OY BEPUL kirish!\n📅 Gacha: ${freeDate}`;
-                try { await bot.telegram.sendMessage(inviterId, bonusMsg); } catch (_) {}
+                try { await bot.telegram.sendMessage(inviterId, T[invLang]?.referralMsg?.(newCount) || T.uz.referralMsg(newCount)); } catch (_) {}
             }
         }
     }
@@ -2819,7 +2758,7 @@ bot.on('text', async (ctx) => {
         const words = parseInt(text) || 500;
         const price = PRICES.essay;
         ctx.session.essayWords = words;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2844,7 +2783,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 10;
         const price = PRICES.referat;
         ctx.session.referatPages = pages;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2863,7 +2802,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 3;
         const price = PRICES.tezis;
         ctx.session.tezisPages = pages;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2882,7 +2821,7 @@ bot.on('text', async (ctx) => {
         const pages = parseInt(text) || 3;
         const price = PRICES.maqola;
         ctx.session.maqolaPages = pages;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2895,7 +2834,7 @@ bot.on('text', async (ctx) => {
         if (text.length < 3) return ctx.reply(t(userId, 'infoTooShort'));
         const price = PRICES.infografika;
         ctx.session.infoTopic = text;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
@@ -2907,7 +2846,7 @@ bot.on('text', async (ctx) => {
     if (user.step === 'RASM_DESC') {
         const price = PRICES.rasm;
         ctx.session.rasmDesc = text;
-        if (!hasFreeAccess(userId) && (user.balance || 0) < price) {
+        if ((user.balance || 0) < price) {
             ctx.session.neededAmount = price;
             updateUser(userId, { step: 'NEED_PAYMENT' });
             return ctx.reply(t(userId, 'lowBalance', price, user.balance||0), KB.payment(lang));
