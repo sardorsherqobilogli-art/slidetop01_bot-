@@ -2255,7 +2255,8 @@ bot.hears(['👨‍💻 Admin bilan bog\'lanish'], async (ctx) => {
     );
 });
 
-
+// --- ADMIN PANEL ---
+bot.hears([/👨‍💻 Admin Panel/, '👨‍💻 Admin Panel', '👨‍💻 Админ Панель'], async (ctx) => {
     const userId = ctx.from.id;
     const lang = getLang(userId);
     if (userId !== ADMIN_ID) return ctx.reply(t(userId, 'noAccess'));
@@ -2456,7 +2457,7 @@ bot.command('users_detail', async (ctx) => {
     }
 });
 
-
+bot.command('stats', async (ctx) => {
     if (ctx.from.id !== ADMIN_ID) return;
     const lang = getLang(ADMIN_ID);
     const users = loadJson(USERS_FILE, {});
