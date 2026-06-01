@@ -3331,7 +3331,7 @@ bot.on('document', async (ctx) => {
             const outPath = path.join(TEMP_DIR, `compressed_${userId}_${Date.now()}.pdf`);
             try {
                 execSync(
-                    `ghostscript -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outPath}" "${inputPath}"`,
+                    `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outPath}" "${inputPath}"`,
                     { timeout: 60000 }
                 );
                 const origSize = fs.statSync(inputPath).size;
@@ -3352,18 +3352,17 @@ bot.on('document', async (ctx) => {
         if (mime.includes('video') || ext === '.mp4' || ext === '.avi' || ext === '.mkv') {
             await ctx.reply('🎵 Video dan ovoz ajratilmoqda...');
             const mp3Path = path.join(TEMP_DIR, `audio_${userId}_${Date.now()}.mp3`);
-            const ffmpeg = require('fluent-ffmpeg');
-            const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-            ffmpeg.setFfmpegPath(ffmpegPath);
-
+            const { spawn } = require('child_process');
             await new Promise((resolve, reject) => {
-                ffmpeg(inputPath)
-                    .noVideo()
-                    .audioCodec('libmp3lame')
-                    .audioBitrate('128k')
-                    .save(mp3Path)
-                    .on('end', resolve)
-                    .on('error', reject);
+                const proc = spawn('ffmpeg', [
+                    '-i', inputPath,
+                    '-vn',
+                    '-acodec', 'libmp3lame',
+                    '-ab', '128k',
+                    '-y', mp3Path
+                ]);
+                proc.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg error')));
+                proc.on('error', reject);
             });
 
             await ctx.replyWithAudio({ source: mp3Path }, {
