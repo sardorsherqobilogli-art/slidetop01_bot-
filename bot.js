@@ -41,6 +41,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, data TEXT);
   CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, data TEXT);
   CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, data TEXT);
+  CREATE TABLE IF NOT EXISTS contact_messages (id TEXT PRIMARY KEY, data TEXT);
 `);
 
 function loadJson(filePath, def) {
@@ -872,17 +873,17 @@ const KB = {
         [Markup.button.callback('🇺🇿 O\'zbek', 'lang_uz'), Markup.button.callback('🇷🇺 Русский', 'lang_ru'), Markup.button.callback('🇬🇧 English', 'lang_en'), Markup.button.callback('🇮🇩 Indonesia', 'lang_id')]
     ]),
     mainMenu: (lang = 'uz', isAdmin = false) => {
-        // Ko'rinadigan tugmalar (yangi tartib)
+        // Asosiy menyu tugmalari
         const rows = [
             [`📄 Rasmdan PDF`, `🔗 QR Kod`],
             [`📝 Test`, `🔲 Krassvord`],
-            [`📦 PDF Siqish`, `🎬 MP4 → MP3`],
-            [`💰 Balansim`, `🎁 Bepul Olish`],
+            [`📦 PDF Siqish`, `🎬 Audio/Video → MP3`],
+            [`📊 PPTX → PDF`, `📝 DOCX → PDF`],
+            [`📄 PDF → Word`, `💰 Balansim`],
             [`❓ Yordam`, `⚙️ Sozlamalar`],
+            [`👨‍💻 Admin bilan bog'lanish`],
         ];
         if (isAdmin) rows.push([`👨‍💻 Admin Panel`]);
-        // Kod saqlanadi, lekin menyuda ko'rinmaydi:
-        // Slayd, Referat, Mustaqil, Insho, Tezis, Maqola, Infografika, Rasm yaratish
         return Markup.keyboard(rows).resize();
     },
     cancel: (lang = 'uz') => {
@@ -1046,9 +1047,12 @@ const KB = {
         const usersLabel = lang === 'ru' ? 'Пользователи' : lang === 'en' ? 'Users' : lang === 'id' ? 'Pengguna' : 'Foydalanuvchilar';
         const msgLabel = lang === 'ru' ? 'Рассылка' : lang === 'en' ? 'Broadcast' : lang === 'id' ? 'Siaran' : 'Xabar yuborish';
         const statLabel = lang === 'ru' ? 'Статистика' : lang === 'en' ? 'Statistics' : lang === 'id' ? 'Statistik' : 'Statistika';
+        const contactLabel = 'Murojaatlar 📩';
+        const usersDetailLabel = '👥 Batafsil Jadval';
         return Markup.keyboard([
             [`📋 ${payLabel}`, `👥 ${usersLabel}`],
             [`📢 ${msgLabel}`, `📊 ${statLabel}`],
+            [contactLabel, usersDetailLabel],
             [`◀️ ${l.back}`]
         ]).resize();
     }
@@ -2197,8 +2201,61 @@ bot.hears([/🖼 .*/, '🖼 Rasm Yaratish', '🖼 Создать Картинк�
     return ctx.reply(t(userId, 'rasmPrompt', user.balance || 0, PRICES.rasm), KB.cancel(lang));
 });
 
-// --- ADMIN PANEL ---
-bot.hears([/👨‍💻 .*/, '👨‍💻 Admin Panel', '👨‍💻 Админ Панель'], async (ctx) => {
+// --- PPTX → PDF tugmasi ---
+bot.hears(['📊 PPTX → PDF'], async (ctx) => {
+    const userId = ctx.from.id;
+    if (!getUser(userId).registered) return;
+    return ctx.reply(
+        `📊 PPTX → PDF\n\nPPTX yoki PPT faylni yuboring, men PDF ga o'girib beraman!\n\n✅ BEPUL!`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// --- DOCX → PDF tugmasi ---
+bot.hears(['📝 DOCX → PDF'], async (ctx) => {
+    const userId = ctx.from.id;
+    if (!getUser(userId).registered) return;
+    return ctx.reply(
+        `📝 DOCX → PDF\n\nWord faylni (DOCX yoki DOC) yuboring, men PDF ga o'girib beraman!\n\n✅ BEPUL!`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// --- PDF → Word tugmasi ---
+bot.hears(['📄 PDF → Word'], async (ctx) => {
+    const userId = ctx.from.id;
+    if (!getUser(userId).registered) return;
+    updateUser(userId, { step: 'PDF_TO_WORD_WAITING' });
+    return ctx.reply(
+        `📄 PDF → Word\n\nPDF faylni yuboring, men Word (DOCX) ga o'girib beraman!\n\n✅ BEPUL!\n\n⚠️ Eslatma: Murakkab formatlash (jadvallar, rasmlar) to'liq saqlanmasligi mumkin.`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// --- Audio/Video → MP3 tugmasi ---
+bot.hears(['🎬 Audio/Video → MP3'], async (ctx) => {
+    const userId = ctx.from.id;
+    if (!getUser(userId).registered) return;
+    return ctx.reply(
+        `🎵 Audio/Video → MP3\n\nFaylni yuboring, men MP3 ga o'girib beraman!\n\n✅ Qabul qilinadi:\n🎬 Video: MP4, AVI, MKV, MOV, FLV, WEBM\n🎵 Audio: WAV, FLAC, OGG, AAC, M4A, WMA, OPUS, AMR\n\n✅ BEPUL!`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// --- Admin bilan bog'lanish (foydalanuvchi uchun) ---
+bot.hears(['👨‍💻 Admin bilan bog\'lanish'], async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+    const lang = getLang(userId);
+    updateUser(userId, { step: 'CONTACT_ADMIN' });
+    return ctx.reply(
+        `👨‍💻 Admin bilan bog'lanish\n\nXabaringizni yozing, admin tez orada javob beradi! 📩`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+
     const userId = ctx.from.id;
     const lang = getLang(userId);
     if (userId !== ADMIN_ID) return ctx.reply(t(userId, 'noAccess'));
@@ -2216,7 +2273,7 @@ bot.hears([/👨‍💻 .*/, '👨‍💻 Admin Panel', '👨‍💻 Админ 
 });
 
 // --- ADMIN PANEL TUGMALARI ---
-bot.hears([/📋 .*/, /👥 .*/, /📢 .*/, /📊 .*/], async (ctx) => {
+bot.hears([/📋 .*/, /👥 .*/, /📢 .*/], async (ctx) => {
     const userId = ctx.from.id;
     if (userId !== ADMIN_ID) return;
     const lang = getLang(userId);
@@ -2235,10 +2292,22 @@ bot.hears([/📋 .*/, /👥 .*/, /📢 .*/, /📊 .*/], async (ctx) => {
 
     if (text.includes('👥') || text.includes('Foydalanuvchilar') || text.includes('Пользователи') || text.includes('Users')) {
         const users = Object.values(loadJson(USERS_FILE, {}));
-        let msg = `👥 ${lang === 'ru' ? 'Пользователи' : lang === 'en' ? 'Users' : lang === 'id' ? 'Pengguna' : 'Foydalanuvchilar'} (${users.length}):\n\n`;
-        users.slice(0, 15).forEach((u, i) => {
-            msg += `${i+1}. ${u.name} ${u.surname} — ${(u.balance||0).toLocaleString()} ${t(userId, 'currency')}\n`;
+        const orders = loadJson(ORDERS_FILE, []);
+        let msg = `👥 Foydalanuvchilar (${users.length} ta):\n\n`;
+        users.slice(0, 20).forEach((u, i) => {
+            // Oxirgi buyurtma vaqtini toping
+            const userOrders = orders.filter(o => String(o.userId) === String(u.id));
+            const lastOrder = userOrders.length ? userOrders[userOrders.length - 1] : null;
+            const lastTime = lastOrder ? new Date(lastOrder.createdAt).toLocaleDateString('uz-UZ') : '—';
+            const phone = u.phone || '—';
+            const username = u.username ? `@${u.username}` : '—';
+            msg += `${i+1}. ${u.name} ${u.surname}\n`;
+            msg += `   📱 Tel: ${phone} | TG: ${username}\n`;
+            msg += `   💰 Balans: ${(u.balance||0).toLocaleString()} so'm\n`;
+            msg += `   📋 Buyurtmalar: ${u.totalOrders||0} ta | 🕐 Oxirgi: ${lastTime}\n\n`;
         });
+        if (users.length > 20) msg += `... va yana ${users.length - 20} ta foydalanuvchi\n`;
+        msg += `\n🔍 Batafsil: /users_detail buyrug'ini yuboring`;
         return ctx.reply(msg);
     }
 
@@ -2256,6 +2325,57 @@ bot.hears([/📋 .*/, /👥 .*/, /📢 .*/, /📊 .*/], async (ctx) => {
         orders.forEach(o => { byType[o.type] = (byType[o.type]||0)+1; });
         let msg = `📊 ${lang === 'ru' ? 'Статистика' : lang === 'en' ? 'Statistics' : lang === 'id' ? 'Statistik' : 'Statistika'}\n\n👥 ${Object.keys(users).length}\n💵 ${totalRevenue.toLocaleString()} ${t(userId, 'currency')}\n📋 ${orders.length}\n\n${lang === 'ru' ? 'По типам' : lang === 'en' ? 'By type' : lang === 'id' ? 'Menurut jenis' : 'Turlari bo\'yicha'}:\n`;
         Object.entries(byType).forEach(([k,v]) => msg += `  ${k}: ${v}\n`);
+        return ctx.reply(msg);
+    }
+
+    // --- MUROJAATLAR ---
+    if (text.includes('Murojaatlar')) {
+        const contacts = loadJson(USERS_FILE, {});
+        // contactMessages DB dan o'qish
+        let msgs = [];
+        try {
+            const rows = db.prepare('SELECT data FROM contact_messages ORDER BY rowid DESC LIMIT 20').all();
+            msgs = rows.map(r => JSON.parse(r.data));
+        } catch(_) {}
+        if (!msgs.length) return ctx.reply('📩 Hozircha murojaatlar yo\'q.');
+        let reply = `📩 Oxirgi murojaatlar (${msgs.length}):\n\n`;
+        msgs.forEach((m, i) => {
+            reply += `${i+1}. 👤 ${m.name} ${m.surname} (@${m.username||'—'}) | ID: ${m.userId}\n`;
+            reply += `   📅 ${new Date(m.createdAt).toLocaleString('uz-UZ')}\n`;
+            reply += `   💬 ${m.text.slice(0,150)}${m.text.length>150?'...':''}\n\n`;
+        });
+        return ctx.reply(reply);
+    }
+
+    // --- BATAFSIL JADVAL ---
+    if (text.includes('Batafsil Jadval')) {
+        const users = Object.values(loadJson(USERS_FILE, {}));
+        const orders = loadJson(ORDERS_FILE, []);
+        let msg = `📊 FOYDALANUVCHILAR JADVALI\n${'─'.repeat(30)}\n\n`;
+        users.forEach((u, i) => {
+            const userOrders = orders.filter(o => String(o.userId) === String(u.id));
+            const ordersByType = {};
+            userOrders.forEach(o => { ordersByType[o.type] = (ordersByType[o.type]||0)+1; });
+            const firstTime = u.createdAt ? new Date(u.createdAt).toLocaleDateString('uz-UZ') : '—';
+            const lastOrder = userOrders.length ? userOrders[userOrders.length-1] : null;
+            const lastTime = lastOrder ? new Date(lastOrder.createdAt).toLocaleString('uz-UZ') : '—';
+            msg += `${i+1}. ${u.name} ${u.surname}\n`;
+            msg += `   🆔 ${u.id} | TG: @${u.username||'—'}\n`;
+            msg += `   📱 Tel: ${u.phone||'—'}\n`;
+            msg += `   📅 Ro'yxat: ${firstTime}\n`;
+            msg += `   🕐 Oxirgi faollik: ${lastTime}\n`;
+            msg += `   💰 Balans: ${(u.balance||0).toLocaleString()} so'm\n`;
+            msg += `   📋 Jami: ${u.totalOrders||0} ta buyurtma\n`;
+            if (Object.keys(ordersByType).length) {
+                msg += `   📂 ${Object.entries(ordersByType).map(([k,v])=>`${k}:${v}`).join(', ')}\n`;
+            }
+            msg += '\n';
+            // Telegram 4096 belgi limit
+            if (msg.length > 3500) {
+                msg += `... va yana ${users.length - i - 1} ta foydalanuvchi\nBarchasi: /users_detail`;
+                return;
+            }
+        });
         return ctx.reply(msg);
     }
 });
@@ -2308,7 +2428,35 @@ bot.command('balance', async (ctx) => {
     return ctx.reply(`✅ ${targetId}: +${parseInt(amount).toLocaleString()} ${t(ADMIN_ID, 'currency')}`);
 });
 
-bot.command('stats', async (ctx) => {
+bot.command('users_detail', async (ctx) => {
+    if (ctx.from.id !== ADMIN_ID) return;
+    const users = Object.values(loadJson(USERS_FILE, {}));
+    const orders = loadJson(ORDERS_FILE, []);
+    // Jadval ko'rinishida har 10 tadan yuborish
+    const chunkSize = 10;
+    for (let i = 0; i < users.length; i += chunkSize) {
+        const chunk = users.slice(i, i + chunkSize);
+        let msg = `📊 Foydalanuvchilar ${i+1}–${Math.min(i+chunkSize, users.length)} / ${users.length}\n${'─'.repeat(30)}\n\n`;
+        chunk.forEach((u, idx) => {
+            const userOrders = orders.filter(o => String(o.userId) === String(u.id));
+            const lastOrder = userOrders.length ? userOrders[userOrders.length-1] : null;
+            const lastTime = lastOrder ? new Date(lastOrder.createdAt).toLocaleString('uz-UZ') : '—';
+            const firstTime = u.createdAt ? new Date(u.createdAt).toLocaleDateString('uz-UZ') : '—';
+            const ordersByType = {};
+            userOrders.forEach(o => { ordersByType[o.type] = (ordersByType[o.type]||0)+1; });
+            msg += `${i+idx+1}. ${u.name} ${u.surname}\n`;
+            msg += `   🆔 ${u.id} | @${u.username||'—'}\n`;
+            msg += `   📱 ${u.phone||'—'}\n`;
+            msg += `   📅 Kirgan: ${firstTime}\n`;
+            msg += `   🕐 Oxirgi: ${lastTime}\n`;
+            msg += `   💰 ${(u.balance||0).toLocaleString()} so'm | 📋 ${u.totalOrders||0} ta\n\n`;
+        });
+        try { await ctx.reply(msg); } catch(_) {}
+        await new Promise(r => setTimeout(r, 200));
+    }
+});
+
+
     if (ctx.from.id !== ADMIN_ID) return;
     const lang = getLang(ADMIN_ID);
     const users = loadJson(USERS_FILE, {});
@@ -2514,7 +2662,7 @@ bot.on('text', async (ctx) => {
             const cancelWords = ['Bekor', 'Отмена', 'Cancel', 'Batal'];
             if (cancelWords.some(w => text.includes(w))) { updateUser(userId, { step: 'WAITING_NAME' }); return ctx.reply(t(userId, 'enterName')); }
             if (text.length < 2) return ctx.reply(t(userId, 'surnameTooShort'));
-            updateUser(userId, { surname: text, registered: true, step: 'MAIN_MENU', freeUsed: 0 });
+            updateUser(userId, { surname: text, registered: true, step: 'MAIN_MENU', freeUsed: 0, username: ctx.from.username || '' });
             user = getUser(userId);
             return ctx.reply(t(userId, 'registered', user.name, FREE_SLIDES), KB.mainMenu(lang, userId === ADMIN_ID));
         }
@@ -2884,10 +3032,26 @@ bot.on('text', async (ctx) => {
 
     // ====== ADMIN MUROJAAT ======
     if (user.step === 'CONTACT_ADMIN') {
+        // Xabarni DB ga saqlash
+        try {
+            const msgId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+            const msgData = {
+                id: msgId,
+                userId,
+                name: user.name,
+                surname: user.surname,
+                username: ctx.from.username || '',
+                phone: user.phone || '',
+                text,
+                createdAt: new Date().toISOString()
+            };
+            db.prepare('INSERT OR REPLACE INTO contact_messages (id, data) VALUES (?, ?)').run(msgId, JSON.stringify(msgData));
+        } catch(_) {}
+
         if (ADMIN_ID) {
             try {
                 await bot.telegram.sendMessage(ADMIN_ID,
-                    t(ADMIN_ID, 'newContactMsg', user.name, user.surname, ctx.from.username||'', userId, text)
+                    `📩 YANGI MUROJAAT!\n\n👤 ${user.name} ${user.surname}\n🆔 ${userId}\n📱 Tel: ${user.phone||'—'}\n🔗 TG: @${ctx.from.username||'—'}\n\n💬 Xabar:\n${text}`
                 );
             } catch (_) {}
         }
@@ -3325,8 +3489,31 @@ bot.on('document', async (ctx) => {
             return;
         }
 
-        // PDF SIQISH
+        // PDF SIQISH yoki PDF → WORD
         if (mime === 'application/pdf' || ext === '.pdf') {
+            if (user.step === 'PDF_TO_WORD_WAITING') {
+                // PDF → WORD
+                await ctx.reply("🔄 PDF → Word ga o'girilmoqda...");
+                try {
+                    execSync(`libreoffice --headless --convert-to docx --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+                    const baseName = path.basename(inputPath, '.pdf');
+                    const convertedPath = path.join(TEMP_DIR, baseName + '.docx');
+                    if (fs.existsSync(convertedPath)) {
+                        await ctx.replyWithDocument({ source: convertedPath }, {
+                            caption: `✅ Word fayl tayyor!\n\n📄 ${fileName} → DOCX\n✅ Matn va jadvallar saqlandi`
+                        });
+                        try { fs.unlinkSync(convertedPath); } catch(_) {}
+                    } else {
+                        await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+                    }
+                } catch(e) {
+                    await ctx.reply('😔 PDF → Word xatosi. Qayta urining.');
+                }
+                updateUser(userId, { step: 'MAIN_MENU' });
+                try { fs.unlinkSync(inputPath); } catch(_) {}
+                return;
+            }
+            // PDF → SIQISH (default)
             await ctx.reply('📦 PDF siqilmoqda...');
             const outPath = path.join(TEMP_DIR, `compressed_${userId}_${Date.now()}.pdf`);
             try {
@@ -3348,9 +3535,10 @@ bot.on('document', async (ctx) => {
             return;
         }
 
-        // MP4 → MP3
-        if (mime.includes('video') || ext === '.mp4' || ext === '.avi' || ext === '.mkv') {
-            await ctx.reply('🎵 Video dan ovoz ajratilmoqda...');
+        // MP4/Video/Audio → MP3
+        if (mime.includes('video') || mime.includes('audio') ||
+            ['.mp4','.avi','.mkv','.mov','.flv','.webm','.mp3','.ogg','.wav','.flac','.aac','.m4a','.wma','.opus','.amr'].includes(ext)) {
+            await ctx.reply('🎵 Audio/Video dan MP3 ajratilmoqda...');
             const mp3Path = path.join(TEMP_DIR, `audio_${userId}_${Date.now()}.mp3`);
             const { spawn } = require('child_process');
             await new Promise((resolve, reject) => {
@@ -3376,7 +3564,7 @@ bot.on('document', async (ctx) => {
         // Noma'lum fayl
         try { fs.unlinkSync(inputPath); } catch(_) {}
         return ctx.reply(
-            `😊 Bu fayl turi qo'llab-quvvatlanmaydi.\n\n✅ Qabul qilinadi:\n📊 PPTX — PDF ga o'girish\n📝 DOCX — PDF ga o'girish\n📄 PDF — Siqish\n🎬 MP4 — MP3 ga o'girish`
+            `😊 Bu fayl turi qo'llab-quvvatlanmaydi.\n\n✅ Qabul qilinadi:\n📊 PPTX/PPT — PDF ga o'girish\n📝 DOCX/DOC — PDF ga o'girish\n📄 PDF — Siqish\n🔄 PDF — Word ga o'girish\n🎬 MP4/AVI/MKV/MOV — MP3 ga o'girish\n🎵 MP3/WAV/FLAC/OGG/AAC/M4A — MP3 ga o'girish`
         );
 
     } catch(e) {
