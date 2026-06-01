@@ -109,14 +109,33 @@ function getLang(userId) {
 // ==================== KO'P TILLI MATNLAR ====================
 const T = {
     uz: {
-        welcome: `🌟 SlaydTop ga xush kelibsiz!\nIltimos, tilni tanlang:`,
-        enterName: `✨ Ajoyib tanlov!\n\nEndi tanishib olaylik 😊\nIsmingizni kiriting:\n(Masalan: Sardor)`,
+        welcome: `🎉 SlaydTop'ga xush kelibsiz!\n\n🚀 Bu yerda 9 ta xizmat — MUTLAQO BEPUL!\n\nIltimos, tilni tanlang 👇`,
+        enterName: `✨ Ajoyib! Endi tanishib olaylik 😊\n\nFaqat ismingizni kiriting:\n👉 (Masalan: Sardor)`,
         enterSurname: (name) => `🎉 Zo'r ism, ${name}!\n\nFamilyangizni kiriting:\n(Masalan: Yoldoshev)`,
         registered: (name, freeCount) =>
-            `🎉 Xush kelibsiz, ${name}!\nSizga 2 OY davomida barcha xizmatlardan \nBEPUL foydalanish sovg'a qilindi! 🎁\n📅 Shart: @SlaydTop_01 kanalida qoling\n💡 3 oy qolsangiz → yana 2 oy bepul!\nHoziroq boshlang 👇`,
-        mainMenu: `Xizmatni tanlang 👇`,
-        balance: (u) =>
-            `💰 Sizning hisobingiz\n\n👤 ${u.name} ${u.surname}\n💳 Balans: ${(u.balance||0).toLocaleString()} so'm\n🎁 Bepul slayd: ${Math.max(0, FREE_SLIDES-(u.freeUsed||0))} ta qoldi\n📊 Jami buyurtmalar: ${u.totalOrders||0} ta`,
+            `🎊 Xush kelibsiz, ${name}! 🎊\n\n` +
+            `Siz hozirdan boshlab SlaydTop oilasining a'zosisiz! 🌟\n\n` +
+            `🎁 SIZGA MAXSUS SOVG'A:\n` +
+            `✅ 9 ta xizmatdan 2 OY davomida MUTLAQO BEPUL foydalaning!\n\n` +
+            `📌 Shartlar:\n` +
+            `   1️⃣ @SlaydTop_01 kanalida qoling\n` +
+            `   2️⃣ Botdan chiqib ketmang\n\n` +
+            `🔥 BONUS AKSIYA:\n` +
+            `   Atigi 3 do'stingizga ulashing = UMRBOD BEPUL!\n` +
+            `   (Pastdagi "🎁 Ulashish & Bepul" tugmasini bosing)\n\n` +
+            `Hoziroq boshlang 👇`,
+        mainMenu: `🔥 Qaysi xizmatdan foydalanasiz? 👇\n\n✅ Barcha xizmatlar hozir BEPUL!`,
+        balance: (u) => {
+            const isFreeActive = true; // yoz aksiyasi
+            const freeUntil = u.freeUntil ? new Date(u.freeUntil).toLocaleDateString('uz-UZ') : '—';
+            return `💰 Sizning hisobingiz\n\n` +
+            `👤 ${u.name}\n` +
+            `💳 Balans: ${(u.balance||0).toLocaleString()} so'm\n` +
+            `🎁 Tarif: ${isFreeActive ? '✅ MUTLAQO BEPUL (Yoz Aksiyasi)' : '❌ Bepul davr tugagan'}\n` +
+            `📅 Bepul davr: ${freeUntil} gacha\n` +
+            `📊 Jami buyurtmalar: ${u.totalOrders||0} ta\n\n` +
+            `🔥 3 do'stga ulashing → UMRBOD BEPUL! 🎁`;
+        },
         cancel: '❌ Bekor qilish',
         back: '◀️ Asosiy Menyu',
         lowBalance: (need, has) =>
@@ -873,15 +892,14 @@ const KB = {
         [Markup.button.callback('🇺🇿 O\'zbek', 'lang_uz'), Markup.button.callback('🇷🇺 Русский', 'lang_ru'), Markup.button.callback('🇬🇧 English', 'lang_en'), Markup.button.callback('🇮🇩 Indonesia', 'lang_id')]
     ]),
     mainMenu: (lang = 'uz', isAdmin = false) => {
-        // Asosiy menyu tugmalari
         const rows = [
-            [`📄 Rasmdan PDF`, `🔗 QR Kod`],
-            [`📝 Test`, `🔲 Krassvord`],
-            [`📦 PDF Siqish`, `🎬 Audio/Video → MP3`],
-            [`📊 PPTX → PDF`, `📝 DOCX → PDF`],
-            [`📄 PDF → Word`, `💰 Balansim`],
-            [`❓ Yordam`, `⚙️ Sozlamalar`],
-            [`👨‍💻 Admin bilan bog'lanish`],
+            [`📄 Rasmdan PDF 🆓`, `🔗 QR Kod 🆓`],
+            [`📝 Yangi Test ✨`, `🔲 Yangi Krassvord 🧩`],
+            [`📦 PDF Siqish 🆓`, `🎬 Audio/Video → MP3 🆓`],
+            [`📊 PPTX → PDF 🆓`, `📝 DOCX → PDF 🆓`],
+            [`📄 PDF → Word 🆓`, `🎁 Ulashish & Bepul`],
+            [`💰 Balansim`, `⚙️ Sozlamalar`],
+            [`❓ Yordam`],
         ];
         if (isAdmin) rows.push([`👨‍💻 Admin Panel`]);
         return Markup.keyboard(rows).resize();
@@ -1006,32 +1024,19 @@ const KB = {
         ]).resize();
     },
     help: (lang = 'uz') => {
-        const labels = {
-            uz: ['📱 Bot ishlamayapti', '💳 To\'lov muammosi', '📄 Fayl kelmadi', '👨‍💻 Admin bilan bog\'lanish'],
-            ru: ['📱 Бот не работает', '💳 Проблема с оплатой', '📄 Файл не пришёл', '👨‍💻 Связь с админом'],
-            en: ['📱 Bot not working', '💳 Payment issue', '📄 File not received', '👨‍💻 Contact admin'],
-            id: ['📱 Bot tidak berfungsi', '💳 Masalah pembayaran', '📄 File tidak diterima', '👨‍💻 Hubungi admin'],
-        };
-        const l = labels[lang] || labels.uz;
         return Markup.inlineKeyboard([
-            [Markup.button.callback(l[0], 'help_bot')],
-            [Markup.button.callback(l[1], 'help_payment')],
-            [Markup.button.callback(l[2], 'help_file')],
-            [Markup.button.callback(l[3], 'help_admin')]
+            [Markup.button.callback('🔄 /start — Botni qayta ishga tushurish', 'help_start')],
+            [Markup.button.callback('🔁 /restart — Xatoni tuzatish', 'help_restart')],
+            [Markup.button.callback('📖 /manuel — Qanday ishlash', 'help_manuel')],
+            [Markup.button.callback('👨‍💻 Admin bilan bog\'lanish', 'help_admin')],
+            [Markup.button.callback('🌐 /sozlama — Til va sozlamalar', 'help_sozlama')],
+            [Markup.button.callback('🎁 Aksiya — 3 kishiga ulash = BEPUL!', 'help_aksiya')],
         ]);
     },
     settings: (lang = 'uz') => {
-        const labels = {
-            uz: ['✏️ Ismni o\'zgartirish', '✏️ Familyani o\'zgartirish', '🌐 Tilni o\'zgartirish'],
-            ru: ['✏️ Изменить имя', '✏️ Изменить фамилию', '🌐 Изменить язык'],
-            en: ['✏️ Change name', '✏️ Change surname', '🌐 Change language'],
-            id: ['✏️ Ubah nama', '✏️ Ubah nama belakang', '🌐 Ubah bahasa'],
-        };
-        const l = labels[lang] || labels.uz;
         return Markup.inlineKeyboard([
-            [Markup.button.callback(l[0], 'edit_name')],
-            [Markup.button.callback(l[1], 'edit_surname')],
-            [Markup.button.callback(l[2], 'edit_lang')]
+            [Markup.button.callback('✏️ Ismni o\'zgartirish', 'edit_name')],
+            [Markup.button.callback('🌐 Tilni o\'zgartirish', 'edit_lang')],
         ]);
     },
     rating: () => Markup.inlineKeyboard([[
@@ -1943,7 +1948,7 @@ bot.action(/lang_(uz|ru|en|id)/, async (ctx) => {
     const userId = ctx.from.id;
     updateUser(userId, { lang, step: 'WAITING_NAME' });
     await ctx.answerCbQuery();
-    await ctx.editMessageText('✅');
+    await ctx.editMessageText('✅ Til tanlandi!');
     return ctx.reply(T[lang]?.enterName || T.uz.enterName, KB.cancel(lang));
 });
 
@@ -2009,6 +2014,74 @@ bot.action('help_admin', async (ctx) => {
     await ctx.reply(t(userId, 'adminMsg'), KB.cancel(lang));
 });
 
+// ==================== YORDAM CALLBACK (QOSHIMCHA) ====================
+bot.action('help_start', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        `🔄 /start buyrug'i\n\n` +
+        `Bu buyruq botni qayta ishga tushuradi.\n\n` +
+        `📌 Qachon ishlatiladi:\n` +
+        `• Bot javob bermayapti\n` +
+        `• Menyu ko'rinmayapti\n` +
+        `• Biror xizmat to'xtab qolgan\n\n` +
+        `👉 Hozir /start ni bosib ko'ring!`
+    );
+});
+bot.action('help_restart', async (ctx) => {
+    const userId = ctx.from.id;
+    const lang = getLang(userId);
+    await ctx.answerCbQuery();
+    updateUser(userId, { step: 'MAIN_MENU' });
+    await ctx.reply(
+        `🔁 /restart buyrug'i\n\n` +
+        `Agar xizmat o'rtada to'xtab qolsa, /restart bosing.\n` +
+        `Bu barcha xatolarni tuzatib, asosiy menyuga qaytaradi.\n\n` +
+        `✅ Tiklandi!`,
+        KB.mainMenu(lang, userId === ADMIN_ID)
+    );
+});
+bot.action('help_manuel', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        `📖 Qanday ishlash — Qo'llanma\n\n` +
+        `1️⃣ Pastdagi tugmalardan xizmat tanlang\n` +
+        `2️⃣ Bot so'ragan ma'lumotni yozing yoki fayl yuboring\n` +
+        `3️⃣ Natijani kutib oling (5-30 soniya)\n\n` +
+        `📄 Rasmdan PDF: Rasm(lar) yuboring → PDF tayyor\n` +
+        `🔗 QR Kod: Havola/matn yozing → QR kod tayyor\n` +
+        `📝 Test: Mavzu yozing → Test tayyor\n` +
+        `🔲 Krassvord: Mavzu yozing → Krassvord tayyor\n` +
+        `📦 PDF Siqish: PDF yuboring → Kichraytirilgan PDF\n` +
+        `🎬 Audio/Video → MP3: Fayl yuboring → MP3 tayyor\n` +
+        `📊 PPTX → PDF: PPTX yuboring → PDF tayyor\n` +
+        `📝 DOCX → PDF: DOCX yuboring → PDF tayyor\n` +
+        `📄 PDF → Word: PDF yuboring → DOCX tayyor\n\n` +
+        `🎁 AKSIYA: 3 kishiga ulashing → UMRBOD BEPUL!`
+    );
+});
+bot.action('help_sozlama', async (ctx) => {
+    const userId = ctx.from.id;
+    const lang = getLang(userId);
+    await ctx.answerCbQuery();
+    await ctx.reply(t(userId, 'settings', getUser(userId)), KB.settings(lang));
+});
+bot.action('help_aksiya', async (ctx) => {
+    const userId = ctx.from.id;
+    const lang = getLang(userId);
+    await ctx.answerCbQuery();
+    const link = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
+    await ctx.reply(
+        `🎁 AKSIYA — 3 kishiga ulashing = UMRBOD BEPUL!\n\n` +
+        `📌 Qanday qilish:\n` +
+        `1️⃣ Quyidagi havolani nusxalab oling\n` +
+        `2️⃣ Kamida 3 do'stingizga yuboring\n` +
+        `3️⃣ Ular botga kirishi bilan siz BEPUL bo'lasiz!\n\n` +
+        `🔗 Sizning havolangiz:\n${link}\n\n` +
+        `👥 Taklif qilganlaringiz: ${getUser(userId).invitedCount || 0} kishi`,
+        { reply_markup: { inline_keyboard: [[{ text: '📤 Ulashish', switch_inline_query: `SlaydTop botini ko'rib chiqing! Bepul xizmatlar: ${link}` }]] } }
+    );
+});
+
 // ==================== SOZLAMALAR CALLBACK ====================
 bot.action('edit_name', async (ctx) => {
     const userId = ctx.from.id;
@@ -2039,23 +2112,50 @@ bot.hears([/💰 .*/, '💰 Balansim', '💰 Мой Баланс', '💰 My Bala
     const user = getUser(userId);
     if (!user.registered) return;
     const lang = getLang(userId);
-    return ctx.reply(t(userId, 'balance', user), KB.mainMenu(lang, userId === ADMIN_ID));
+    const link = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
+    const shareMsg = `\n\n🔥 3 do'stga ulashing → UMRBOD BEPUL!\n🔗 ${link}`;
+    return ctx.reply(t(userId, 'balance', user) + shareMsg, Markup.inlineKeyboard([
+        [Markup.button.url("📢 Kanalga o'tish", "https://t.me/SlaydTop_01")],
+        [Markup.button.callback('🎁 Ulashish va Bepul olish', 'help_aksiya')]
+    ]));
 });
 
-// --- BEPUL OLISH ---
-bot.hears([/🎁 .*/, '🎁 Bepul olish', '🎁 Бесплатно', '🎁 Get Free', '🎁 Gratis'], async (ctx) => {
+// --- ULASHISH & BEPUL ---
+bot.hears([/🎁 .*Ulash.*/, '🎁 Ulashish & Bepul', '🎁 Bepul olish', '🎁 Бесплатно', '🎁 Get Free', '🎁 Gratis'], async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
     if (!user.registered) return;
-    const lang = getLang(userId);
-    return ctx.reply(t(userId, 'free', userId, BOT_USERNAME) + `\n\n${t(userId, 'referralCount', user.invitedCount || 0)}`, KB.mainMenu(lang, userId === ADMIN_ID));
+    const link = `https://t.me/${BOT_USERNAME}?start=ref_${userId}`;
+    const invCount = user.invitedCount || 0;
+    const needed = Math.max(0, 3 - invCount);
+    const isDone = invCount >= 3;
+    await ctx.reply(
+        `🎁 AKSIYA — Ulashish & Mutlaqo Bepul!\n\n` +
+        `🌟 Atigi 3 kishiga ulashing = UMRBOD BEPUL!\n\n` +
+        `📊 Sizning holatiz:\n` +
+        `👥 Taklif qilganlar: ${invCount} kishi\n` +
+        `${isDone ? '✅ TABRIKLAYMIZ! Siz BEPUL foydalanasiz! 🎉' : `⏳ Yana ${needed} kishiga ulang va BEPUL bo'ling!`}\n\n` +
+        `🔗 Sizning havolangiz:\n${link}\n\n` +
+        `📋 Qanday qilish:\n` +
+        `1️⃣ Ushbu havolani nusxalab oling\n` +
+        `2️⃣ Do'stlaringizga yuboring\n` +
+        `3️⃣ Ular botga kirishi bilan hisoblanadi!`,
+        Markup.inlineKeyboard([
+            [Markup.button.url("📤 Do'stga yuborish", `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('SlaydTop — 9 ta xizmat MUTLAQO BEPUL! 🔥')}`)],
+            [Markup.button.callback("📊 Holatimni ko'rish", 'help_aksiya')]
+        ])
+    );
 });
 
 // --- YORDAM ---
 bot.hears([/❓ .*/, '❓ Yordam', '❓ Помощь', '❓ Help', '❓ Bantuan'], async (ctx) => {
     const userId = ctx.from.id;
     const lang = getLang(userId);
-    return ctx.reply(t(userId, 'help'), KB.help(lang));
+    await ctx.reply(
+        `❓ Yordam Markazi\n\n` +
+        `Quyidagi buyruqlar va bo'limlardan foydalaning:`,
+        KB.help(lang)
+    );
 });
 
 // --- SOZLAMALAR ---
@@ -2112,7 +2212,7 @@ bot.hears(['🖼 Kollaj Yaratish', '🖼 Создать Коллаж', '🖼 Cre
     );
 });
 
-bot.hears([/📄 .*/, '📄 Rasmdan PDF', '📄 Фото в PDF', '📄 Image to PDF', '📄 Gambar ke PDF'], async (ctx) => {
+bot.hears([/📄 Rasmdan.*/, '📄 Rasmdan PDF', '📄 Rasmdan PDF 🆓', '📄 Фото в PDF', '📄 Image to PDF', '📄 Gambar ke PDF'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
     const lang = getLang(userId);
@@ -2142,7 +2242,7 @@ bot.hears([/✍️ .*/, '✍️ Insho/Esse', '✍️ Сочинение/Эссе
 });
 
 // --- TEST ---
-bot.hears([/📝 .*/, '📝 Test', '📝 Тест', '📝 Ujian'], async (ctx) => {
+bot.hears(['📝 Test', '📝 Тест', '📝 Ujian', '📝 Yangi Test ✨'], async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
     if (!user.registered) return;
@@ -2152,7 +2252,7 @@ bot.hears([/📝 .*/, '📝 Test', '📝 Тест', '📝 Ujian'], async (ctx) =
 });
 
 // --- KRASSVORD ---
-bot.hears([/🔲 .*/, '🔲 Krassvord', '🔲 Кроссворд', '🔲 Crossword', '🔲 TTS'], async (ctx) => {
+bot.hears([/🔲 .*/, '🔲 Krassvord', '🔲 Кроссворд', '🔲 Crossword', '🔲 TTS', '🔲 Yangi Krassvord 🧩'], async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
     if (!user.registered) return;
@@ -2202,7 +2302,7 @@ bot.hears([/🖼 .*/, '🖼 Rasm Yaratish', '🖼 Создать Картинк�
 });
 
 // --- PPTX → PDF tugmasi ---
-bot.hears(['📊 PPTX → PDF'], async (ctx) => {
+bot.hears(['📊 PPTX → PDF', '📊 PPTX → PDF 🆓'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
     return ctx.reply(
@@ -2212,7 +2312,7 @@ bot.hears(['📊 PPTX → PDF'], async (ctx) => {
 });
 
 // --- DOCX → PDF tugmasi ---
-bot.hears(['📝 DOCX → PDF'], async (ctx) => {
+bot.hears(['📝 DOCX → PDF', '📝 DOCX → PDF 🆓'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
     return ctx.reply(
@@ -2222,7 +2322,7 @@ bot.hears(['📝 DOCX → PDF'], async (ctx) => {
 });
 
 // --- PDF → Word tugmasi ---
-bot.hears(['📄 PDF → Word'], async (ctx) => {
+bot.hears(['📄 PDF → Word', '📄 PDF → Word 🆓'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
     updateUser(userId, { step: 'PDF_TO_WORD_WAITING' });
@@ -2233,7 +2333,7 @@ bot.hears(['📄 PDF → Word'], async (ctx) => {
 });
 
 // --- Audio/Video → MP3 tugmasi ---
-bot.hears(['🎬 Audio/Video → MP3'], async (ctx) => {
+bot.hears(['🎬 Audio/Video → MP3', '🎬 Audio/Video → MP3 🆓'], async (ctx) => {
     const userId = ctx.from.id;
     if (!getUser(userId).registered) return;
     return ctx.reply(
@@ -2474,6 +2574,55 @@ bot.command('reset', async (ctx) => {
     return ctx.reply(t(userId, 'restored'), KB.mainMenu(lang, userId === ADMIN_ID));
 });
 
+// /restart - same as reset
+bot.command('restart', async (ctx) => {
+    const userId = ctx.from.id;
+    const lang = getLang(userId);
+    updateUser(userId, { step: 'MAIN_MENU' });
+    ctx.session = {};
+    return ctx.reply(
+        `🔁 Bot qayta tiklandi!\n\nHamma xatolar tozalandi. Hozir ishlashingiz mumkin! 😊`,
+        KB.mainMenu(lang, userId === ADMIN_ID)
+    );
+});
+
+// /manuel - instructions
+bot.command('manuel', async (ctx) => {
+    await ctx.reply(
+        `📖 SlaydTop — Foydalanish Qo'llanmasi\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📄 Rasmdan PDF\n` +
+        `→ Rasm(lar) yuboring, PDF oling\n\n` +
+        `🔗 QR Kod\n` +
+        `→ Havola yoki matn yozing, QR kod tayyorlasiz\n\n` +
+        `📝 Test\n` +
+        `→ Mavzu kiriting, tayyor test oling\n\n` +
+        `🔲 Krassvord\n` +
+        `→ Mavzu kiriting, qiziqarli krassvord oling\n\n` +
+        `📦 PDF Siqish\n` +
+        `→ Katta PDF yuboring, kichik hajmdagini oling\n\n` +
+        `🎬 Audio/Video → MP3\n` +
+        `→ Istalgan video/audio fayl yuboring, MP3 oling\n\n` +
+        `📊 PPTX → PDF\n` +
+        `→ PowerPoint yuboring, PDF oling\n\n` +
+        `📝 DOCX → PDF\n` +
+        `→ Word hujjat yuboring, PDF oling\n\n` +
+        `📄 PDF → Word\n` +
+        `→ PDF yuboring, Word hujjat oling\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `🎁 AKSIYA: 3 kishiga ulashing → UMRBOD BEPUL!\n\n` +
+        `📢 Kanal: @SlaydTop_01`
+    );
+});
+
+// /sozlama - settings
+bot.command('sozlama', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    const lang = getLang(userId);
+    return ctx.reply(t(userId, 'settings', user), KB.settings(lang));
+});
+
 // ==================== RASM HANDLER (MULTI-TILLI) ====================
 bot.on('photo', async (ctx) => {
     const userId = ctx.from.id;
@@ -2656,15 +2805,19 @@ bot.on('text', async (ctx) => {
     if (!user.registered) {
         if (user.step === 'WAITING_NAME') {
             if (text.length < 2) return ctx.reply(t(userId, 'nameTooShort'));
-            updateUser(userId, { name: text, step: 'WAITING_SURNAME' });
-            return ctx.reply(t(userId, 'enterSurname', text), KB.cancel(lang));
-        }
-        if (user.step === 'WAITING_SURNAME') {
-            const cancelWords = ['Bekor', 'Отмена', 'Cancel', 'Batal'];
-            if (cancelWords.some(w => text.includes(w))) { updateUser(userId, { step: 'WAITING_NAME' }); return ctx.reply(t(userId, 'enterName')); }
-            if (text.length < 2) return ctx.reply(t(userId, 'surnameTooShort'));
-            updateUser(userId, { surname: text, registered: true, step: 'MAIN_MENU', freeUsed: 0, username: ctx.from.username || '' });
+            // Faqat ism — familya yo'q
+            const freeUntilDate = new Date();
+            freeUntilDate.setMonth(freeUntilDate.getMonth() + 2);
+            updateUser(userId, {
+                name: text,
+                registered: true,
+                step: 'MAIN_MENU',
+                freeUsed: 0,
+                username: ctx.from.username || '',
+                freeUntil: freeUntilDate.toISOString()
+            });
             user = getUser(userId);
+            // Chiroyli tabriklash xabari
             return ctx.reply(t(userId, 'registered', user.name, FREE_SLIDES), KB.mainMenu(lang, userId === ADMIN_ID));
         }
         if (user.step === 'LANG_SELECT') return ctx.reply(t(userId, 'welcome'), KB.langSelect());
@@ -3416,7 +3569,7 @@ bot.command('qr', async (ctx) => {
     }
 });
 
-bot.hears([/🔗 .*QR.*/, '🔗 QR Kod', '🔗 QR Code'], async (ctx) => {
+bot.hears([/🔗 .*QR.*/, '🔗 QR Kod', '🔗 QR Kod 🆓', '🔗 QR Code'], async (ctx) => {
     const userId = ctx.from.id;
     const user = getUser(userId);
     if (!user.registered) return;
