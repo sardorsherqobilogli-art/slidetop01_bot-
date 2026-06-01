@@ -2976,15 +2976,23 @@ bot.on('text', async (ctx) => {
     if (user.step === 'QR_INPUT') {
         updateUser(userId, { step: 'MAIN_MENU' });
         try {
-            const QRCode = require('qrcode');
             const ts = Date.now();
             const qrImgPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.png`);
             const qrPdfPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.pdf`);
 
-            // 1) QR kodini PNG sifatida yaratish (yuqori sifat)
-            await QRCode.toFile(qrImgPath, text, {
-                width: 600, margin: 3,
-                color: { dark: '#000000', light: '#ffffff' }
+            // 1) QR rasmini api.qrserver.com dan yuklab olish
+            const encoded = encodeURIComponent(text);
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=600x600&margin=10&format=png`;
+
+            await new Promise((resolve, reject) => {
+                const file = fs.createWriteStream(qrImgPath);
+                https.get(qrUrl, (res) => {
+                    res.pipe(file);
+                    file.on('finish', () => { file.close(); resolve(); });
+                }).on('error', (err) => {
+                    fs.unlink(qrImgPath, () => {});
+                    reject(err);
+                });
             });
 
             // 2) QR rasmini PDF ga joylash (pdfkit yordamida)
@@ -2999,20 +3007,17 @@ bot.on('text', async (ctx) => {
                     const x = (pageW - qrSize) / 2;
                     const y = (pageH - qrSize) / 2 - 60;
 
-                    // Sarlavha
                     PDFDoc.fontSize(18).fillColor('#000000')
                         .text('QR KOD', 0, y - 50, { align: 'center', width: pageW });
 
-                    // QR rasm
                     PDFDoc.image(qrImgPath, x, y, { width: qrSize, height: qrSize });
 
-                    // Matn (URL/text qisqartirilib)
                     const shortText = text.length > 70 ? text.slice(0, 67) + '...' : text;
                     PDFDoc.fontSize(11).fillColor('#333333')
                         .text(shortText, 40, y + qrSize + 20, { align: 'center', width: pageW - 80 });
 
                     PDFDoc.fontSize(9).fillColor('#888888')
-                        .text('📱 Telefon kamerasida skanerlang', 0, y + qrSize + 50, { align: 'center', width: pageW });
+                        .text('Telefon kamerasida skanerlang', 0, y + qrSize + 50, { align: 'center', width: pageW });
 
                     PDFDoc.end();
                     writeStream.on('finish', resolve);
@@ -3022,10 +3027,8 @@ bot.on('text', async (ctx) => {
 
             const shortCaption = `✅ QR Kod tayyor!\n\n🔗 ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`;
 
-            // 3) Rasm sifatida yuborish
             await ctx.replyWithPhoto({ source: qrImgPath }, { caption: shortCaption });
 
-            // 4) PDF sifatida yuborish
             await ctx.replyWithDocument(
                 { source: qrPdfPath, filename: `QR_Kod_${ts}.pdf` },
                 { caption: `📄 PDF versiyasi — chop etish yoki saqlash uchun!` }
@@ -3036,7 +3039,7 @@ bot.on('text', async (ctx) => {
             addOrder(userId, 'qr', { text: text.slice(0, 100), price: 0 });
         } catch(e) {
             console.error('QR xato:', e.message);
-            await ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
+            await ctx.reply('😔 QR kod yaratishda xatolik. Qayta urining.');
         }
         return;
     }
@@ -3602,14 +3605,23 @@ bot.command('qr', async (ctx) => {
     }
 
     try {
-        const QRCode = require('qrcode');
         const ts = Date.now();
         const qrImgPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.png`);
         const qrPdfPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.pdf`);
 
-        await QRCode.toFile(qrImgPath, text, {
-            width: 600, margin: 3,
-            color: { dark: '#000000', light: '#ffffff' }
+        // QR rasmini api.qrserver.com dan yuklab olish
+        const encoded = encodeURIComponent(text);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=600x600&margin=10&format=png`;
+
+        await new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(qrImgPath);
+            https.get(qrUrl, (res) => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', (err) => {
+                fs.unlink(qrImgPath, () => {});
+                reject(err);
+            });
         });
 
         // PDF yaratish
@@ -3629,7 +3641,7 @@ bot.command('qr', async (ctx) => {
                 PDFDoc.fontSize(11).fillColor('#333333')
                     .text(shortText, 40, y + qrSize + 20, { align: 'center', width: pageW - 80 });
                 PDFDoc.fontSize(9).fillColor('#888888')
-                    .text('📱 Telefon kamerasida skanerlang', 0, y + qrSize + 50, { align: 'center', width: pageW });
+                    .text('Telefon kamerasida skanerlang', 0, y + qrSize + 50, { align: 'center', width: pageW });
                 PDFDoc.end();
                 ws.on('finish', resolve);
                 ws.on('error', reject);
@@ -3648,7 +3660,7 @@ bot.command('qr', async (ctx) => {
         addOrder(userId, 'qr', { text: text.slice(0, 100), price: 0 });
     } catch(e) {
         console.error('QR xato:', e.message);
-        return ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
+        return ctx.reply('😔 QR kod yaratishda xatolik. Qayta urining.');
     }
 });
 
