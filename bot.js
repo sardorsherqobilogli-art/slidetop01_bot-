@@ -2794,6 +2794,525 @@ async function checkAndDeductBalance(ctx, userId, price, nextStep) {
     return null;
 }
 
+
+// ==================== ISHLOV BERISHCHI FUNKSIYALAR (MULTI-TILLI) ====================
+
+async function doCreateSlide(ctx, userId) {
+    const user = getUser(userId);
+    const lang = getLang(userId);
+    const topic = ctx.session.topic;
+    const count = ctx.session.slideCount || 5;
+    const price = ctx.session.slidePrice || 0;
+    const isFree = price === 0;
+    const tmpl1 = ctx.session.templateId;
+    const tmpl2 = ctx.session.templateId2;
+    const isDual = !!(tmpl1 && tmpl2);
+    const slideType = ctx.session.slideType || 'normal';
+    const userPicPath = ctx.session.userPicPath || null;
+    const paket = getPaket(count, isFree, lang);
+
+    const processMsgs = {
+        normal: `⏳ ${paket.emoji} ${paket.nom} tayyorlanmoqda...\n\n📋 Shablon tanlanmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n📎 Fayl tayyorlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+        chart:  `⏳ ${paket.emoji} Diagrammali slayd tayyorlanmoqda...\n\n🤖 AI matn yozmoqda\n📈 Grafiklar chizilmoqda\n📊 Diagrammalar qo'shilmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+        pic:    `⏳ ${paket.emoji} Rasmli slayd tayyorlanmoqda...\n\n🖼 Rasmingiz joylashtirilmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
+    };
+    await ctx.reply(processMsgs[slideType] || processMsgs.normal, { reply_markup: { remove_keyboard: true } });
+
+    try {
+        if (isFree) {
+            updateUser(userId, { freeUsed: (user.freeUsed || 0) + 1 });
+        } else {
+            updateUser(userId, { balance: (user.balance || 0) - price });
+        }
+
+        const aiText = await aiSlides(topic, count, lang);
+        if (!aiText) {
+            if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
+            updateUser(userId, { step: 'MAIN_MENU' });
+            return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
+        }
+
+        if (slideType === 'chart') {
+            // DIAGRAMMALI
+            const filePath = await makeChartSlidePptx(topic, aiText, userId, count, lang);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: `✅ Diagrammali slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
+            });
+            try { fs.unlinkSync(filePath); } catch(_) {}
+
+        } else if (slideType === 'pic' && userPicPath && fs.existsSync(userPicPath)) {
+            // RASMLI
+            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang, userPicPath);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: `✅ Rasmli slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n🖼 Sizning rasmingiz bilan\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
+            });
+            try { fs.unlinkSync(filePath); } catch(_) {}
+            try { fs.unlinkSync(userPicPath); } catch(_) {}
+
+        } else if (isDual) {
+            // 2 TA SHABLON
+            const [file1, file2] = await Promise.all([
+                makeSlidePptx(topic, aiText, userId, count, tmpl1, lang),
+                makeSlidePptx(topic, aiText, userId, count, tmpl2, lang)
+            ]);
+            await ctx.replyWithDocument({ source: file1 }, { caption: `🎨 Variant 1 — Shablon #${tmpl1?.replace('template_','')||'A'}\n📌 ${topic}\n📊 ${count} ta slayd` });
+            await ctx.replyWithDocument({ source: file2 }, { caption: `🎨 Variant 2 — Shablon #${tmpl2?.replace('template_','')||'B'}\n📌 ${topic}\n📊 ${count} ta slayd` });
+            await ctx.reply(`✅ Ikkala variant tayyor! 🎉\n\n${paket.emoji} ${paket.nom}\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}\n\nYoqqanini saqlang! 😊`);
+            try { fs.unlinkSync(file1); } catch(_) {}
+            try { fs.unlinkSync(file2); } catch(_) {}
+
+        } else {
+            // ODDIY
+            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang);
+            await ctx.replyWithDocument({ source: filePath }, {
+                caption: t(userId, 'slideReady1', paket, topic, count, price, isFree)
+            });
+            try { fs.unlinkSync(filePath); } catch(_) {}
+        }
+
+        ctx.session.slideType = null;
+        ctx.session.userPicPath = null;
+        ctx.session.templateId = null;
+        ctx.session.templateId2 = null;
+
+        addOrder(userId, 'slides', { topic, count, price, type: slideType, dual: isDual });
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Slayd xato:', err.message);
+        if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
+        ctx.session.slideType = null;
+        ctx.session.userPicPath = null;
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
+    }
+}
+
+async function doCreateTest(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.testTopic;
+    const count = ctx.session.testCount || 10;
+    const diff = ctx.session.testDiff || "O'rta";
+    const price = PRICES.test;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiTest(topic, count, diff, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeTestPptx(topic, aiText, userId, count, diff, lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'testReady', topic, count, price) });
+        addOrder(userId, 'test', { topic, count, diff, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Test xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateCrossword(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.crossTopic;
+    const count = ctx.session.crossCount || 10;
+    const price = PRICES.crossword;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiCrossword(topic, count, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeCrosswordPptx(topic, aiText, userId, count, lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'crossReady', topic, count, price) });
+        addOrder(userId, 'krassvord', { topic, count, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Krassvord xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateEssay(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.essayTopic;
+    const type = ctx.session.essayType || 'insho';
+    const words = ctx.session.essayWords || 500;
+    const price = PRICES.essay;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiEssay(topic, type, words, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeTextPptx(topic, aiText, userId, type === 'insho' ? 'Insho' : 'Esse', lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'essayReady', type, topic, words, price) });
+        addOrder(userId, type, { topic, words, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Essay xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateReferat(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.referatTopic;
+    const type = ctx.session.referatType || 'referat';
+    const pages = ctx.session.referatPages || 10;
+    const price = PRICES.referat;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiReferat(topic, type, pages, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeTextPptx(topic, aiText, userId, type === 'referat' ? 'Referat' : 'MustaqilIsh', lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'referatReady', type, topic, pages, price) });
+        addOrder(userId, type, { topic, pages, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Referat xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateTezis(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.tezisTopic;
+    const pages = ctx.session.tezisPages || 3;
+    const price = PRICES.tezis;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiTezis(topic, pages, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeTextPptx(topic, aiText, userId, 'Tezis', lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'tezisReady', topic, pages, price) });
+        addOrder(userId, 'tezis', { topic, pages, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Tezis xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateMaqola(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.maqolaTopic;
+    const pages = ctx.session.maqolaPages || 3;
+    const price = PRICES.maqola;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiMaqola(topic, pages, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeTextPptx(topic, aiText, userId, 'Maqola', lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'maqolaReady', topic, pages, price) });
+        addOrder(userId, 'maqola', { topic, pages, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Maqola xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateInfo(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const topic = ctx.session.infoTopic;
+    const price = PRICES.infografika;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const aiText = await aiInfografika(topic, lang);
+        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+        const filePath = await makeInfoPptx(topic, aiText, userId, lang);
+        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'infoReady', topic, price) });
+        addOrder(userId, 'infografika', { topic, price });
+        try { fs.unlinkSync(filePath); } catch (_) {}
+        updateUser(userId, { step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
+    } catch (err) {
+        console.error('Infografika xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+async function doCreateRasm(ctx, userId) {
+    const lang = getLang(userId);
+    const user = getUser(userId);
+    const desc = ctx.session.rasmDesc;
+    const price = PRICES.rasm;
+
+    await ctx.reply(t(userId, 'creating'));
+    updateUser(userId, { balance: (user.balance||0) - price });
+
+    try {
+        const prompt = await aiRasm(desc, lang);
+        if (!prompt) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
+
+        updateUser(userId, { step: 'MAIN_MENU' });
+        addOrder(userId, 'rasm', { desc, price });
+        return ctx.reply(t(userId, 'rasmReady', price, prompt), KB.mainMenu(lang, userId === ADMIN_ID));
+    } catch (err) {
+        console.error('Rasm xato:', err.message);
+        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
+        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
+    }
+}
+
+// ==================== QR KOD ====================
+bot.command('qr', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+
+    const text = ctx.message.text.replace('/qr', '').trim();
+    if (!text || text.length < 3) {
+        return ctx.reply(
+            `🔗 QR Kod Yaratish\n\n` +
+            `Ishlatish: /qr [havola yoki matn]\n\n` +
+            `Masalan:\n` +
+            `/qr https://youtube.com/...\n` +
+            `/qr https://instagram.com/...\n\n` +
+            `✅ BEPUL!`
+        );
+    }
+
+    try {
+        const ts = Date.now();
+        const qrImgPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.png`);
+
+        const encoded = encodeURIComponent(text);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=600x600&margin=10&format=png`;
+
+        await new Promise((resolve, reject) => {
+            const file = fs.createWriteStream(qrImgPath);
+            https.get(qrUrl, (res) => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', (err) => {
+                fs.unlink(qrImgPath, () => {});
+                reject(err);
+            });
+        });
+
+        await ctx.replyWithPhoto({ source: qrImgPath }, {
+            caption: `✅ QR Kod tayyor!\n\n🔗 Havola: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
+        });
+
+        try { fs.unlinkSync(qrImgPath); } catch(_) {}
+        addOrder(userId, 'qr', { text: text.slice(0, 100), price: 0 });
+    } catch(e) {
+        console.error('QR xato:', e.message);
+        return ctx.reply('😔 QR kod yaratishda xatolik. Qayta urining.');
+    }
+});
+
+bot.hears([/🔗 .*QR.*/, '🔗 QR Kod', '🔗 QR Kod 🆓', '🔗 QR Code'], async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    if (!user.registered) return;
+    updateUser(userId, { step: 'QR_INPUT' });
+    return ctx.reply(
+        `🔗 QR Kod Yaratish\n\n` +
+        `Iltimos, havola yoki matn yuboring:\n` +
+        `Men sizga QR kodni rasm shaklida yaratib beraman.\n\n` +
+        `Masalan: https://youtube.com/...`,
+        Markup.keyboard([['❌ Bekor qilish']]).resize()
+    );
+});
+
+// ==================== FAYL QABUL QILISH ====================
+bot.on('document', async (ctx) => {
+    const userId = ctx.from.id;
+    const user = getUser(userId);
+    const lang = getLang(userId);
+    if (!user.registered) return;
+
+    const doc = ctx.message.document;
+    const mime = doc.mime_type || '';
+    const fileName = doc.file_name || 'fayl';
+
+    if (doc.file_size > 50 * 1024 * 1024) {
+        return ctx.reply('😔 Fayl hajmi 50MB dan katta. Kichikroq fayl yuboring.');
+    }
+
+    await ctx.reply('⏳ Fayl qabul qilindi. Tayyorlanmoqda...');
+
+    try {
+        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+        const ext = path.extname(fileName) || '.bin';
+        const inputPath = path.join(TEMP_DIR, `in_${userId}_${Date.now()}${ext}`);
+
+        await new Promise((resolve, reject) => {
+            const proto = fileLink.href.startsWith('https') ? https : http;
+            const file = fs.createWriteStream(inputPath);
+            proto.get(fileLink.href, res => {
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+            }).on('error', reject);
+        });
+
+        // PPTX → PDF
+        if (mime.includes('presentation') || ext === '.pptx' || ext === '.ppt') {
+            await ctx.reply("📊 PPTX → PDF ga o'girilmoqda...");
+            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+            const pdfName = path.basename(inputPath, ext) + '.pdf';
+            const pdfPath = path.join(TEMP_DIR, pdfName);
+            if (fs.existsSync(pdfPath)) {
+                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Format buzilmadi` });
+                try { fs.unlinkSync(pdfPath); } catch(_) {}
+            } else {
+                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // WORD → PDF
+        if (mime.includes('word') || ext === '.docx' || ext === '.doc') {
+            await ctx.reply("📝 Word → PDF ga o'girilmoqda...");
+            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+            const pdfName = path.basename(inputPath, ext) + '.pdf';
+            const pdfPath = path.join(TEMP_DIR, pdfName);
+            if (fs.existsSync(pdfPath)) {
+                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Matn va jadvallar saqlandi` });
+                try { fs.unlinkSync(pdfPath); } catch(_) {}
+            } else {
+                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // PDF SIQISH yoki PDF → WORD
+        if (mime === 'application/pdf' || ext === '.pdf') {
+            if (user.step === 'PDF_TO_WORD_WAITING') {
+                // PDF → WORD
+                await ctx.reply("🔄 PDF → Word ga o'girilmoqda...");
+                try {
+                    execSync(`libreoffice --headless --convert-to docx --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
+                    const baseName = path.basename(inputPath, '.pdf');
+                    const convertedPath = path.join(TEMP_DIR, baseName + '.docx');
+                    if (fs.existsSync(convertedPath)) {
+                        await ctx.replyWithDocument({ source: convertedPath }, {
+                            caption: `✅ Word fayl tayyor!\n\n📄 ${fileName} → DOCX\n✅ Matn va jadvallar saqlandi`
+                        });
+                        try { fs.unlinkSync(convertedPath); } catch(_) {}
+                    } else {
+                        await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
+                    }
+                } catch(e) {
+                    await ctx.reply('😔 PDF → Word xatosi. Qayta urining.');
+                }
+                updateUser(userId, { step: 'MAIN_MENU' });
+                try { fs.unlinkSync(inputPath); } catch(_) {}
+                return;
+            }
+            // PDF → SIQISH (default)
+            await ctx.reply('📦 PDF siqilmoqda...');
+            const outPath = path.join(TEMP_DIR, `compressed_${userId}_${Date.now()}.pdf`);
+            try {
+                execSync(
+                    `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outPath}" "${inputPath}"`,
+                    { timeout: 60000 }
+                );
+                const origSize = fs.statSync(inputPath).size;
+                const newSize  = fs.statSync(outPath).size;
+                const saved = Math.round((1 - newSize / origSize) * 100);
+                await ctx.replyWithDocument({ source: outPath }, {
+                    caption: `✅ PDF siqildi!\n\n📊 Asl hajm: ${(origSize/1024/1024).toFixed(2)} MB\n📉 Yangi hajm: ${(newSize/1024/1024).toFixed(2)} MB\n💾 Tejaldi: ${saved}%`
+                });
+                try { fs.unlinkSync(outPath); } catch(_) {}
+            } catch(e) {
+                await ctx.reply('😔 PDF siqishda xatolik. Qayta urining.');
+            }
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // MP4/Video/Audio → MP3
+        if (mime.includes('video') || mime.includes('audio') ||
+            ['.mp4','.avi','.mkv','.mov','.flv','.webm','.mp3','.ogg','.wav','.flac','.aac','.m4a','.wma','.opus','.amr'].includes(ext)) {
+            await ctx.reply('🎵 Audio/Video dan MP3 ajratilmoqda...');
+            const mp3Path = path.join(TEMP_DIR, `audio_${userId}_${Date.now()}.mp3`);
+            const { spawn } = require('child_process');
+            await new Promise((resolve, reject) => {
+                const proc = spawn('ffmpeg', [
+                    '-i', inputPath,
+                    '-vn',
+                    '-acodec', 'libmp3lame',
+                    '-ab', '128k',
+                    '-y', mp3Path
+                ]);
+                proc.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg error')));
+                proc.on('error', reject);
+            });
+
+            await ctx.replyWithAudio({ source: mp3Path }, {
+                caption: `✅ MP3 tayyor!\n\n🎵 ${fileName} → MP3\n🎧 Sifat: 128kbps`
+            });
+            try { fs.unlinkSync(mp3Path); } catch(_) {}
+            try { fs.unlinkSync(inputPath); } catch(_) {}
+            return;
+        }
+
+        // Noma'lum fayl
+        try { fs.unlinkSync(inputPath); } catch(_) {}
+        return ctx.reply(
+            `😊 Bu fayl turi qo'llab-quvvatlanmaydi.\n\n✅ Qabul qilinadi:\n📊 PPTX/PPT — PDF ga o'girish\n📝 DOCX/DOC — PDF ga o'girish\n📄 PDF — Siqish\n🔄 PDF — Word ga o'girish\n🎬 MP4/AVI/MKV/MOV — MP3 ga o'girish\n🎵 MP3/WAV/FLAC/OGG/AAC/M4A — MP3 ga o'girish`
+        );
+
+    } catch(e) {
+        console.error('Document handler xato:', e.message);
+        return ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
+    }
+});
+
+// ==================== XATO HANDLER ====================
+bot.catch((err, ctx) => {
+    console.error('Bot xato:', err.message, '\nCtx:', ctx?.updateType);
+    try {
+        const userId = ctx?.from?.id;
+        const lang = userId ? getLang(userId) : 'uz';
+        ctx.reply(t(userId, 'unexpectedError')).catch(() => {});
+    } catch (_) {}
+});
 // ==================== ASOSIY MATN HANDLER (MULTI-TILLI) ====================
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
@@ -3247,564 +3766,6 @@ bot.on('text', async (ctx) => {
     }
 });
 
-
-// ==================== ISHLOV BERISHCHI FUNKSIYALAR (MULTI-TILLI) ====================
-
-async function doCreateSlide(ctx, userId) {
-    const user = getUser(userId);
-    const lang = getLang(userId);
-    const topic = ctx.session.topic;
-    const count = ctx.session.slideCount || 5;
-    const price = ctx.session.slidePrice || 0;
-    const isFree = price === 0;
-    const tmpl1 = ctx.session.templateId;
-    const tmpl2 = ctx.session.templateId2;
-    const isDual = !!(tmpl1 && tmpl2);
-    const slideType = ctx.session.slideType || 'normal';
-    const userPicPath = ctx.session.userPicPath || null;
-    const paket = getPaket(count, isFree, lang);
-
-    const processMsgs = {
-        normal: `⏳ ${paket.emoji} ${paket.nom} tayyorlanmoqda...\n\n📋 Shablon tanlanmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n📎 Fayl tayyorlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
-        chart:  `⏳ ${paket.emoji} Diagrammali slayd tayyorlanmoqda...\n\n🤖 AI matn yozmoqda\n📈 Grafiklar chizilmoqda\n📊 Diagrammalar qo'shilmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
-        pic:    `⏳ ${paket.emoji} Rasmli slayd tayyorlanmoqda...\n\n🖼 Rasmingiz joylashtirilmoqda\n🤖 AI matn yozmoqda\n🎨 Dizayn ishlanmoqda\n\nBu 20-40 soniya davom etadi ⌛`,
-    };
-    await ctx.reply(processMsgs[slideType] || processMsgs.normal, { reply_markup: { remove_keyboard: true } });
-
-    try {
-        if (isFree) {
-            updateUser(userId, { freeUsed: (user.freeUsed || 0) + 1 });
-        } else {
-            updateUser(userId, { balance: (user.balance || 0) - price });
-        }
-
-        const aiText = await aiSlides(topic, count, lang);
-        if (!aiText) {
-            if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
-            updateUser(userId, { step: 'MAIN_MENU' });
-            return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
-        }
-
-        if (slideType === 'chart') {
-            // DIAGRAMMALI
-            const filePath = await makeChartSlidePptx(topic, aiText, userId, count, lang);
-            await ctx.replyWithDocument({ source: filePath }, {
-                caption: `✅ Diagrammali slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
-            });
-            try { fs.unlinkSync(filePath); } catch(_) {}
-
-        } else if (slideType === 'pic' && userPicPath && fs.existsSync(userPicPath)) {
-            // RASMLI
-            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang, userPicPath);
-            await ctx.replyWithDocument({ source: filePath }, {
-                caption: `✅ Rasmli slayd tayyor! 🎉\n\n${paket.emoji} Paket: ${paket.nom}\n📌 Mavzu: ${topic}\n📊 ${count} ta slayd\n🖼 Sizning rasmingiz bilan\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}`
-            });
-            try { fs.unlinkSync(filePath); } catch(_) {}
-            try { fs.unlinkSync(userPicPath); } catch(_) {}
-
-        } else if (isDual) {
-            // 2 TA SHABLON
-            const [file1, file2] = await Promise.all([
-                makeSlidePptx(topic, aiText, userId, count, tmpl1, lang),
-                makeSlidePptx(topic, aiText, userId, count, tmpl2, lang)
-            ]);
-            await ctx.replyWithDocument({ source: file1 }, { caption: `🎨 Variant 1 — Shablon #${tmpl1?.replace('template_','')||'A'}\n📌 ${topic}\n📊 ${count} ta slayd` });
-            await ctx.replyWithDocument({ source: file2 }, { caption: `🎨 Variant 2 — Shablon #${tmpl2?.replace('template_','')||'B'}\n📌 ${topic}\n📊 ${count} ta slayd` });
-            await ctx.reply(`✅ Ikkala variant tayyor! 🎉\n\n${paket.emoji} ${paket.nom}\n💰 ${isFree ? 'BEPUL' : price.toLocaleString()+' so\'m'}\n\nYoqqanini saqlang! 😊`);
-            try { fs.unlinkSync(file1); } catch(_) {}
-            try { fs.unlinkSync(file2); } catch(_) {}
-
-        } else {
-            // ODDIY
-            const filePath = await makeSlidePptx(topic, aiText, userId, count, tmpl1, lang);
-            await ctx.replyWithDocument({ source: filePath }, {
-                caption: t(userId, 'slideReady1', paket, topic, count, price, isFree)
-            });
-            try { fs.unlinkSync(filePath); } catch(_) {}
-        }
-
-        ctx.session.slideType = null;
-        ctx.session.userPicPath = null;
-        ctx.session.templateId = null;
-        ctx.session.templateId2 = null;
-
-        addOrder(userId, 'slides', { topic, count, price, type: slideType, dual: isDual });
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Slayd xato:', err.message);
-        if (!isFree) updateUser(userId, { balance: (user.balance || 0) + price });
-        ctx.session.slideType = null;
-        ctx.session.userPicPath = null;
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId === ADMIN_ID));
-    }
-}
-
-async function doCreateTest(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.testTopic;
-    const count = ctx.session.testCount || 10;
-    const diff = ctx.session.testDiff || "O'rta";
-    const price = PRICES.test;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiTest(topic, count, diff, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeTestPptx(topic, aiText, userId, count, diff, lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'testReady', topic, count, price) });
-        addOrder(userId, 'test', { topic, count, diff, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Test xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateCrossword(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.crossTopic;
-    const count = ctx.session.crossCount || 10;
-    const price = PRICES.crossword;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiCrossword(topic, count, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeCrosswordPptx(topic, aiText, userId, count, lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'crossReady', topic, count, price) });
-        addOrder(userId, 'krassvord', { topic, count, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Krassvord xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateEssay(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.essayTopic;
-    const type = ctx.session.essayType || 'insho';
-    const words = ctx.session.essayWords || 500;
-    const price = PRICES.essay;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiEssay(topic, type, words, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeTextPptx(topic, aiText, userId, type === 'insho' ? 'Insho' : 'Esse', lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'essayReady', type, topic, words, price) });
-        addOrder(userId, type, { topic, words, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Essay xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateReferat(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.referatTopic;
-    const type = ctx.session.referatType || 'referat';
-    const pages = ctx.session.referatPages || 10;
-    const price = PRICES.referat;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiReferat(topic, type, pages, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeTextPptx(topic, aiText, userId, type === 'referat' ? 'Referat' : 'MustaqilIsh', lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'referatReady', type, topic, pages, price) });
-        addOrder(userId, type, { topic, pages, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Referat xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateTezis(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.tezisTopic;
-    const pages = ctx.session.tezisPages || 3;
-    const price = PRICES.tezis;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiTezis(topic, pages, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeTextPptx(topic, aiText, userId, 'Tezis', lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'tezisReady', topic, pages, price) });
-        addOrder(userId, 'tezis', { topic, pages, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Tezis xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateMaqola(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.maqolaTopic;
-    const pages = ctx.session.maqolaPages || 3;
-    const price = PRICES.maqola;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiMaqola(topic, pages, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeTextPptx(topic, aiText, userId, 'Maqola', lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'maqolaReady', topic, pages, price) });
-        addOrder(userId, 'maqola', { topic, pages, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Maqola xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateInfo(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const topic = ctx.session.infoTopic;
-    const price = PRICES.infografika;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const aiText = await aiInfografika(topic, lang);
-        if (!aiText) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-        const filePath = await makeInfoPptx(topic, aiText, userId, lang);
-        await ctx.replyWithDocument({ source: filePath }, { caption: t(userId, 'infoReady', topic, price) });
-        addOrder(userId, 'infografika', { topic, price });
-        try { fs.unlinkSync(filePath); } catch (_) {}
-        updateUser(userId, { step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'ratingPrompt'), KB.rating());
-    } catch (err) {
-        console.error('Infografika xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-async function doCreateRasm(ctx, userId) {
-    const lang = getLang(userId);
-    const user = getUser(userId);
-    const desc = ctx.session.rasmDesc;
-    const price = PRICES.rasm;
-
-    await ctx.reply(t(userId, 'creating'));
-    updateUser(userId, { balance: (user.balance||0) - price });
-
-    try {
-        const prompt = await aiRasm(desc, lang);
-        if (!prompt) { updateUser(userId, { balance: (user.balance||0)+price }); return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID)); }
-
-        updateUser(userId, { step: 'MAIN_MENU' });
-        addOrder(userId, 'rasm', { desc, price });
-        return ctx.reply(t(userId, 'rasmReady', price, prompt), KB.mainMenu(lang, userId === ADMIN_ID));
-    } catch (err) {
-        console.error('Rasm xato:', err.message);
-        updateUser(userId, { balance: (user.balance||0)+price, step: 'MAIN_MENU' });
-        return ctx.reply(t(userId, 'error'), KB.mainMenu(lang, userId===ADMIN_ID));
-    }
-}
-
-// ==================== QR KOD ====================
-bot.command('qr', async (ctx) => {
-    const userId = ctx.from.id;
-    const user = getUser(userId);
-    if (!user.registered) return;
-
-    const text = ctx.message.text.replace('/qr', '').trim();
-    if (!text || text.length < 3) {
-        return ctx.reply(
-            `🔗 QR Kod Yaratish\n\n` +
-            `Ishlatish: /qr [havola yoki matn]\n\n` +
-            `Masalan:\n` +
-            `/qr https://youtube.com/...\n` +
-            `/qr https://instagram.com/...\n\n` +
-            `✅ BEPUL!`
-        );
-    }
-
-    try {
-        const ts = Date.now();
-        const qrImgPath = path.join(TEMP_DIR, `qr_${userId}_${ts}.png`);
-
-        const encoded = encodeURIComponent(text);
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encoded}&size=600x600&margin=10&format=png`;
-
-        await new Promise((resolve, reject) => {
-            const file = fs.createWriteStream(qrImgPath);
-            https.get(qrUrl, (res) => {
-                res.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-            }).on('error', (err) => {
-                fs.unlink(qrImgPath, () => {});
-                reject(err);
-            });
-        });
-
-        await ctx.replyWithPhoto({ source: qrImgPath }, {
-            caption: `✅ QR Kod tayyor!\n\n🔗 Havola: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
-        });
-
-        try { fs.unlinkSync(qrImgPath); } catch(_) {}
-        addOrder(userId, 'qr', { text: text.slice(0, 100), price: 0 });
-    } catch(e) {
-        console.error('QR xato:', e.message);
-        return ctx.reply('😔 QR kod yaratishda xatolik. Qayta urining.');
-    }
-});
-        // PDF yaratish
-        await new Promise((resolve, reject) => {
-            try {
-                const PDFDoc = new PDFDocument({ size: 'A4', margin: 0 });
-                const ws = fs.createWriteStream(qrPdfPath);
-                PDFDoc.pipe(ws);
-                const pageW = 595.28, pageH = 841.89;
-                const qrSize = 300;
-                const x = (pageW - qrSize) / 2;
-                const y = (pageH - qrSize) / 2 - 60;
-                PDFDoc.fontSize(18).fillColor('#000000')
-                    .text('QR KOD', 0, y - 50, { align: 'center', width: pageW });
-                PDFDoc.image(qrImgPath, x, y, { width: qrSize, height: qrSize });
-                const shortText = text.length > 70 ? text.slice(0, 67) + '...' : text;
-                PDFDoc.fontSize(11).fillColor('#333333')
-                    .text(shortText, 40, y + qrSize + 20, { align: 'center', width: pageW - 80 });
-                PDFDoc.fontSize(9).fillColor('#888888')
-                    .text('Telefon kamerasida skanerlang', 0, y + qrSize + 50, { align: 'center', width: pageW });
-                PDFDoc.end();
-                ws.on('finish', resolve);
-                ws.on('error', reject);
-            } catch(err) { reject(err); }
-        });
-
-        await ctx.replyWithPhoto({ source: qrImgPath }, {
-            caption: `✅ QR Kod tayyor!\n\n🔗 Havola: ${text.slice(0, 50)}${text.length > 50 ? '...' : ''}\n\n📱 Telefon kamerasida skanerlang!`
-        });
-        await ctx.replyWithDocument(
-            { source: qrPdfPath, filename: `QR_Kod_${ts}.pdf` },
-            { caption: `📄 PDF versiyasi — chop etish yoki saqlash uchun!` }
-        );
-        try { fs.unlinkSync(qrImgPath); } catch(_) {}
-        try { fs.unlinkSync(qrPdfPath); } catch(_) {}
-        addOrder(userId, 'qr', { text: text.slice(0, 100), price: 0 });
-    } catch(e) {
-        console.error('QR xato:', e.message);
-        return ctx.reply('😔 QR kod yaratishda xatolik. Qayta urining.');
-    }
-});
-
-bot.hears([/🔗 .*QR.*/, '🔗 QR Kod', '🔗 QR Kod 🆓', '🔗 QR Code'], async (ctx) => {
-    const userId = ctx.from.id;
-    const user = getUser(userId);
-    if (!user.registered) return;
-    updateUser(userId, { step: 'QR_INPUT' });
-    return ctx.reply(
-        `🔗 QR Kod Yaratish\n\n` +
-        `Iltimos, havola yoki matn yuboring:\n` +
-        `Men sizga QR kodni rasm shaklida yaratib beraman.\n\n` +
-        `Masalan: https://youtube.com/...`,
-        Markup.keyboard([['❌ Bekor qilish']]).resize()
-    );
-});
-
-// ==================== FAYL QABUL QILISH ====================
-bot.on('document', async (ctx) => {
-    const userId = ctx.from.id;
-    const user = getUser(userId);
-    const lang = getLang(userId);
-    if (!user.registered) return;
-
-    const doc = ctx.message.document;
-    const mime = doc.mime_type || '';
-    const fileName = doc.file_name || 'fayl';
-
-    if (doc.file_size > 50 * 1024 * 1024) {
-        return ctx.reply('😔 Fayl hajmi 50MB dan katta. Kichikroq fayl yuboring.');
-    }
-
-    await ctx.reply('⏳ Fayl qabul qilindi. Tayyorlanmoqda...');
-
-    try {
-        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
-        const ext = path.extname(fileName) || '.bin';
-        const inputPath = path.join(TEMP_DIR, `in_${userId}_${Date.now()}${ext}`);
-
-        await new Promise((resolve, reject) => {
-            const proto = fileLink.href.startsWith('https') ? https : http;
-            const file = fs.createWriteStream(inputPath);
-            proto.get(fileLink.href, res => {
-                res.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-            }).on('error', reject);
-        });
-
-        // PPTX → PDF
-        if (mime.includes('presentation') || ext === '.pptx' || ext === '.ppt') {
-            await ctx.reply("📊 PPTX → PDF ga o'girilmoqda...");
-            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
-            const pdfName = path.basename(inputPath, ext) + '.pdf';
-            const pdfPath = path.join(TEMP_DIR, pdfName);
-            if (fs.existsSync(pdfPath)) {
-                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Format buzilmadi` });
-                try { fs.unlinkSync(pdfPath); } catch(_) {}
-            } else {
-                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
-            }
-            try { fs.unlinkSync(inputPath); } catch(_) {}
-            return;
-        }
-
-        // WORD → PDF
-        if (mime.includes('word') || ext === '.docx' || ext === '.doc') {
-            await ctx.reply("📝 Word → PDF ga o'girilmoqda...");
-            execSync(`libreoffice --headless --convert-to pdf --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
-            const pdfName = path.basename(inputPath, ext) + '.pdf';
-            const pdfPath = path.join(TEMP_DIR, pdfName);
-            if (fs.existsSync(pdfPath)) {
-                await ctx.replyWithDocument({ source: pdfPath }, { caption: `✅ PDF tayyor!\n\n📄 ${fileName} → PDF\n✅ Matn va jadvallar saqlandi` });
-                try { fs.unlinkSync(pdfPath); } catch(_) {}
-            } else {
-                await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
-            }
-            try { fs.unlinkSync(inputPath); } catch(_) {}
-            return;
-        }
-
-        // PDF SIQISH yoki PDF → WORD
-        if (mime === 'application/pdf' || ext === '.pdf') {
-            if (user.step === 'PDF_TO_WORD_WAITING') {
-                // PDF → WORD
-                await ctx.reply("🔄 PDF → Word ga o'girilmoqda...");
-                try {
-                    execSync(`libreoffice --headless --convert-to docx --outdir "${TEMP_DIR}" "${inputPath}"`, { timeout: 60000 });
-                    const baseName = path.basename(inputPath, '.pdf');
-                    const convertedPath = path.join(TEMP_DIR, baseName + '.docx');
-                    if (fs.existsSync(convertedPath)) {
-                        await ctx.replyWithDocument({ source: convertedPath }, {
-                            caption: `✅ Word fayl tayyor!\n\n📄 ${fileName} → DOCX\n✅ Matn va jadvallar saqlandi`
-                        });
-                        try { fs.unlinkSync(convertedPath); } catch(_) {}
-                    } else {
-                        await ctx.reply('😔 Konvertatsiya xatosi. Qayta urining.');
-                    }
-                } catch(e) {
-                    await ctx.reply('😔 PDF → Word xatosi. Qayta urining.');
-                }
-                updateUser(userId, { step: 'MAIN_MENU' });
-                try { fs.unlinkSync(inputPath); } catch(_) {}
-                return;
-            }
-            // PDF → SIQISH (default)
-            await ctx.reply('📦 PDF siqilmoqda...');
-            const outPath = path.join(TEMP_DIR, `compressed_${userId}_${Date.now()}.pdf`);
-            try {
-                execSync(
-                    `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outPath}" "${inputPath}"`,
-                    { timeout: 60000 }
-                );
-                const origSize = fs.statSync(inputPath).size;
-                const newSize  = fs.statSync(outPath).size;
-                const saved = Math.round((1 - newSize / origSize) * 100);
-                await ctx.replyWithDocument({ source: outPath }, {
-                    caption: `✅ PDF siqildi!\n\n📊 Asl hajm: ${(origSize/1024/1024).toFixed(2)} MB\n📉 Yangi hajm: ${(newSize/1024/1024).toFixed(2)} MB\n💾 Tejaldi: ${saved}%`
-                });
-                try { fs.unlinkSync(outPath); } catch(_) {}
-            } catch(e) {
-                await ctx.reply('😔 PDF siqishda xatolik. Qayta urining.');
-            }
-            try { fs.unlinkSync(inputPath); } catch(_) {}
-            return;
-        }
-
-        // MP4/Video/Audio → MP3
-        if (mime.includes('video') || mime.includes('audio') ||
-            ['.mp4','.avi','.mkv','.mov','.flv','.webm','.mp3','.ogg','.wav','.flac','.aac','.m4a','.wma','.opus','.amr'].includes(ext)) {
-            await ctx.reply('🎵 Audio/Video dan MP3 ajratilmoqda...');
-            const mp3Path = path.join(TEMP_DIR, `audio_${userId}_${Date.now()}.mp3`);
-            const { spawn } = require('child_process');
-            await new Promise((resolve, reject) => {
-                const proc = spawn('ffmpeg', [
-                    '-i', inputPath,
-                    '-vn',
-                    '-acodec', 'libmp3lame',
-                    '-ab', '128k',
-                    '-y', mp3Path
-                ]);
-                proc.on('close', code => code === 0 ? resolve() : reject(new Error('ffmpeg error')));
-                proc.on('error', reject);
-            });
-
-            await ctx.replyWithAudio({ source: mp3Path }, {
-                caption: `✅ MP3 tayyor!\n\n🎵 ${fileName} → MP3\n🎧 Sifat: 128kbps`
-            });
-            try { fs.unlinkSync(mp3Path); } catch(_) {}
-            try { fs.unlinkSync(inputPath); } catch(_) {}
-            return;
-        }
-
-        // Noma'lum fayl
-        try { fs.unlinkSync(inputPath); } catch(_) {}
-        return ctx.reply(
-            `😊 Bu fayl turi qo'llab-quvvatlanmaydi.\n\n✅ Qabul qilinadi:\n📊 PPTX/PPT — PDF ga o'girish\n📝 DOCX/DOC — PDF ga o'girish\n📄 PDF — Siqish\n🔄 PDF — Word ga o'girish\n🎬 MP4/AVI/MKV/MOV — MP3 ga o'girish\n🎵 MP3/WAV/FLAC/OGG/AAC/M4A — MP3 ga o'girish`
-        );
-
-    } catch(e) {
-        console.error('Document handler xato:', e.message);
-        return ctx.reply('😔 Xatolik yuz berdi. Qayta urining.');
-    }
-});
-
-// ==================== XATO HANDLER ====================
-bot.catch((err, ctx) => {
-    console.error('Bot xato:', err.message, '\nCtx:', ctx?.updateType);
-    try {
-        const userId = ctx?.from?.id;
-        const lang = userId ? getLang(userId) : 'uz';
-        ctx.reply(t(userId, 'unexpectedError')).catch(() => {});
-    } catch (_) {}
-});
 
 // ==================== BOTNI ISHGA TUSHIRISH ====================
 bot.launch()
